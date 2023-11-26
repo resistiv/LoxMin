@@ -16,7 +16,7 @@ void DisassembleChunk(Chunk* chunk, const char* name);
  * 
  * @param chunk A Chunk holding the instruction.
  * @param offset The offset of the instruction.
- * @return int 
+ * @return int The offset of the next instruction.
  */
 int DisassembleInstruction(Chunk* chunk, int offset);
 
