@@ -2,12 +2,14 @@
 #define loxmin_chunk_h
 
 #include "common.h"
+#include "value.h"
 
 /**
  * @brief Enumerates all available opcodes.
  */
 typedef enum
 {
+    OP_CONSTANT,
     OP_RETURN,
 } OpCode;
 
@@ -19,6 +21,8 @@ typedef struct
     int count;
     int capacity;
     uint8_t* code;
+    int* lines;
+    ValueArray constants;
 } Chunk;
 
 /**
@@ -29,6 +33,15 @@ typedef struct
 void InitChunk(Chunk* chunk);
 
 /**
+ * @brief Writes a single byte to a Chunk.
+ * 
+ * @param chunk A Chunk to write to.
+ * @param byte A byte to be written.
+ * @param line The line of source code where the byte originates from.
+ */
+void WriteChunk(Chunk* chunk, uint8_t byte, int line);
+
+/**
  * @brief Frees a Chunk.
  * 
  * @param chunk A Chunk to free.
@@ -36,11 +49,12 @@ void InitChunk(Chunk* chunk);
 void FreeChunk(Chunk* chunk);
 
 /**
- * @brief Writes a single byte to a Chunk.
+ * @brief Adds a constant to a Chunk's constants ValueArray.
  * 
- * @param chunk A Chunk to write to.
- * @param byte A byte to be written.
+ * @param chunk A Chunk to add a constant to.
+ * @param value The Value of the constant.
+ * @return int The index where the constant was appended within the constants ValueArray.
  */
-void WriteChunk(Chunk* chunk, uint8_t byte);
+int AddConstant(Chunk* chunk, Value value);
 
 #endif
