@@ -1,7 +1,10 @@
 #include <stdio.h>
 #include "common.h"
+#include "compiler.h"
 #include "debug.h"
 #include "vm.h"
+
+static InterpretResult Run();
 
 VM vm;
 
@@ -31,6 +34,12 @@ void Push(Value value)
 Value Pop()
 {
     return *(--vm.sp);
+}
+
+InterpretResult Interpret(const char* source)
+{
+    Compile(source);
+    return INTERPRET_OK;
 }
 
 /**
@@ -100,11 +109,4 @@ static InterpretResult Run()
 #undef READ_BYTE
 #undef READ_CONSTANT
 #undef BINARY_OP
-}
-
-InterpretResult Interpret(Chunk* chunk)
-{
-    vm.chunk = chunk;
-    vm.ip = vm.chunk->code;
-    return Run();
 }
