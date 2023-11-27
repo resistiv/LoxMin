@@ -4,9 +4,38 @@
 #include "common.h"
 
 /**
+ * @brief Enumerates all available Value types.
+ */
+typedef enum
+{
+    VALUE_BOOL,
+    VALUE_NIL,
+    VALUE_NUMBER,
+} ValueType;
+
+/**
  * @brief Represents a value.
  */
-typedef double Value;
+typedef struct 
+{
+    ValueType type;
+    union
+    {
+        bool boolean;
+        double number;
+    } as;
+} Value;
+
+#define IS_BOOL(value)   ((value).type == VALUE_BOOL)
+#define IS_NIL(value)    ((value).type == VALUE_NIL)
+#define IS_NUMBER(value) ((value).type == VALUE_NUMBER)
+
+#define AS_BOOL(value)   ((value).as.boolean)
+#define AS_NUMBER(value) ((value).as.number)
+
+#define BOOL_VALUE(value)   ((Value){VALUE_BOOL,   {.boolean = value}})
+#define NIL_VALUE           ((Value){VALUE_NIL,    {.number = 0}})
+#define NUMBER_VALUE(value) ((Value){VALUE_NUMBER, {.number = value}})
 
 /**
  * @brief Stores a series of values.

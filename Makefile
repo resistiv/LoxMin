@@ -7,9 +7,9 @@ BUILDDIR   = build
 
 EXE = LoxMin
 SRC = $(wildcard $(SOURCEDIR)/*.c)
-HDR = $(wildcard $(INCLUDEDIR)/*.h)
+# HDR = $(wildcard $(INCLUDEDIR)/*.h)
 
 all: $(BUILDDIR)/$(EXE)
 
-$(BUILDDIR)/$(EXE): $(SRC) $(HDR)
+$(BUILDDIR)/$(EXE): $(SRC) # $(HDR)
 	$(CC) $(CFLAGS) $^ -o $@

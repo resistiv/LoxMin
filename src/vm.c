@@ -5,6 +5,8 @@
 #include "vm.h"
 
 static InterpretResult Run();
+static Value Peek(int distance);
+static void RuntimeError(const char* format, ...);
 
 VM vm;
 
@@ -34,6 +36,17 @@ void Push(Value value)
 Value Pop()
 {
     return *(--vm.sp);
+}
+
+/**
+ * @brief Peeks at an item on the stack at a specified depth.
+ * 
+ * @param distance The depth of the desired stack item.
+ * @return Value The Value of stack item.
+ */
+static Value Peek(int distance)
+{
+    return vm.sp[-1 - distance];
 }
 
 InterpretResult Interpret(const char* source)
@@ -112,7 +125,12 @@ static InterpretResult Run()
                 BINARY_OP(/);
                 break;
             case OP_NEGATE:
-                Push(-Pop());
+                if (!IS_NUMBER(Peek(0)))
+                {
+                    RuntimeError("Operand must be a number.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                Push(NUMBER_VALUE(-AS_NUMBER(Pop())));
                 break;
             case OP_RETURN:
                 PrintValue(Pop());
@@ -124,4 +142,24 @@ static InterpretResult Run()
 #undef READ_BYTE
 #undef READ_CONSTANT
 #undef BINARY_OP
+}
+
+/**
+ * @brief Reports a runtime error and resets the stack.
+ * 
+ * @param format An error message with formatting.
+ * @param ... 
+ */
+static void RuntimeError(const char* format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+    fputs("\n", stderr);
+
+    size_t instruction = vm.ip - vm.chunk->code - 1;
+    int line = vm.chunk->lines[instruction];
+    fprintf(stderr, "[line %d] in script\n", line);
+    ResetStack();
 }

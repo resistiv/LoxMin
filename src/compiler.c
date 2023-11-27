@@ -158,7 +158,7 @@ static void CompileExpression()
 static void CompileNumber()
 {
     double value = strtod(parser.previous.start, NULL);
-    EmitConstant(value);
+    EmitConstant(NUMBER_VALUE(value));
 }
 
 /**
