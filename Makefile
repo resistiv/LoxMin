@@ -9,10 +9,7 @@ EXE = LoxMin
 SRC = $(wildcard $(SOURCEDIR)/*.c)
 HDR = $(wildcard $(INCLUDEDIR)/*.h)
 
-all: dir $(BUILDDIR)/$(EXE)
-
-dir:
-	if not exist $(BUILDDIR) mkdir $(BUILDDIR)
+all: $(BUILDDIR)/$(EXE)
 
 $(BUILDDIR)/$(EXE): $(SRC) $(HDR)
 	$(CC) $(CFLAGS) $^ -o $@
