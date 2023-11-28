@@ -1,3 +1,4 @@
+#include <stdarg.h>
 #include <stdio.h>
 #include "common.h"
 #include "compiler.h"
@@ -5,7 +6,8 @@
 #include "vm.h"
 
 static InterpretResult Run();
-static Value Peek(int distance);
+static Value StackPeek(int distance);
+static bool IsFalsey(Value value);
 static void RuntimeError(const char* format, ...);
 
 VM vm;
@@ -28,12 +30,12 @@ void FreeVM()
 
 }
 
-void Push(Value value)
+void StackPush(Value value)
 {
     *(vm.sp++) = value;
 }
 
-Value Pop()
+Value StackPop()
 {
     return *(--vm.sp);
 }
@@ -44,7 +46,7 @@ Value Pop()
  * @param distance The depth of the desired stack item.
  * @return Value The Value of stack item.
  */
-static Value Peek(int distance)
+static Value StackPeek(int distance)
 {
     return vm.sp[-1 - distance];
 }
@@ -79,12 +81,17 @@ static InterpretResult Run()
 {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
-#define BINARY_OP(op) \
-        do                      \
-        {                       \
-            double b = Pop();   \
-            double a = Pop();   \
-            Push(a op b);       \
+#define BINARY_OP(valueType, op) \
+        do \
+        { \
+            if (!IS_NUMBER(StackPeek(0)) || !IS_NUMBER(StackPeek(1))) \
+            { \
+                RuntimeError("Operands must be numbers."); \
+                return INTERPRET_RUNTIME_ERROR; \
+            } \
+            double b = AS_NUMBER(StackPop()); \
+            double a = AS_NUMBER(StackPop()); \
+            StackPush(valueType(a op b)); \
         } while (false)
 
     while (1)
@@ -110,30 +117,53 @@ static InterpretResult Run()
         {
             case OP_CONSTANT:
                 Value constant = READ_CONSTANT();
-                Push(constant);
+                StackPush(constant);
+                break;
+            case OP_NIL:
+                StackPush(NIL_VALUE);
+                break;
+            case OP_TRUE:
+                StackPush(BOOL_VALUE(true));
+                break;
+            case OP_FALSE:
+                StackPush(BOOL_VALUE(false));
+                break;
+            case OP_EQUAL:
+                Value b = StackPop();
+                Value a = StackPop();
+                StackPush(BOOL_VALUE(AreValuesEqual(a, b)));
+                break;
+            case OP_GREATER:
+                BINARY_OP(BOOL_VALUE, >);
+                break;
+            case OP_LESS:
+                BINARY_OP(BOOL_VALUE, <);
                 break;
             case OP_ADD:
-                BINARY_OP(+);
+                BINARY_OP(NUMBER_VALUE, +);
                 break;
             case OP_SUBTRACT:
-                BINARY_OP(-);
+                BINARY_OP(NUMBER_VALUE, -);
                 break;
             case OP_MULTIPLY:
-                BINARY_OP(*);
+                BINARY_OP(NUMBER_VALUE, *);
                 break;
             case OP_DIVIDE:
-                BINARY_OP(/);
+                BINARY_OP(NUMBER_VALUE, /);
+                break;
+            case OP_NOT:
+                StackPush(BOOL_VALUE(IsFalsey(StackPop())));
                 break;
             case OP_NEGATE:
-                if (!IS_NUMBER(Peek(0)))
+                if (!IS_NUMBER(StackPeek(0)))
                 {
                     RuntimeError("Operand must be a number.");
                     return INTERPRET_RUNTIME_ERROR;
                 }
-                Push(NUMBER_VALUE(-AS_NUMBER(Pop())));
+                StackPush(NUMBER_VALUE(-AS_NUMBER(StackPop())));
                 break;
             case OP_RETURN:
-                PrintValue(Pop());
+                PrintValue(StackPop());
                 printf("\n");
                 return INTERPRET_OK;
         }
@@ -142,6 +172,18 @@ static InterpretResult Run()
 #undef READ_BYTE
 #undef READ_CONSTANT
 #undef BINARY_OP
+}
+
+/**
+ * @brief Determines if a Value is "falsey."
+ * 
+ * @param value A Value to check.
+ * @return true The Value is falsey.
+ * @return false The Value is not falsey.
+ */
+static bool IsFalsey(Value value)
+{
+    return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
 }
 
 /**

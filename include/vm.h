@@ -50,13 +50,13 @@ InterpretResult Interpret(const char* source);
  * 
  * @param value A Value to push onto the stack.
  */
-void Push(Value value);
+void StackPush(Value value);
 
 /**
  * @brief Pops a Value off of the stack.
  * 
  * @return Value The popped Value.
  */
-Value Pop();
+Value StackPop();
 
 #endif

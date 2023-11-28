@@ -58,6 +58,7 @@ static void CompileNumber();
 static void CompileGrouping();
 static void CompileUnary();
 static void CompileBinary();
+static void CompileLiteral();
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
@@ -95,31 +96,31 @@ ParseRule rules[] =
     [TOKEN_SEMICOLON]           = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_SLASH]               = {NULL,            CompileBinary, PRECEDENCE_FACTOR},
     [TOKEN_STAR]                = {NULL,            CompileBinary, PRECEDENCE_FACTOR},
-    [TOKEN_BANG]                = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_BANG_EQUAL]          = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_BANG]                = {CompileUnary,    NULL,          PRECEDENCE_NONE},
+    [TOKEN_BANG_EQUAL]          = {NULL,            CompileBinary, PRECEDENCE_EQUALITY},
     [TOKEN_EQUAL]               = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_EQUAL_EQUAL]         = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_GREATER]             = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_GREATER_EQUAL]       = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_LESS]                = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_LESS_EQUAL]          = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_EQUAL_EQUAL]         = {NULL,            CompileBinary, PRECEDENCE_EQUALITY},
+    [TOKEN_GREATER]             = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
+    [TOKEN_GREATER_EQUAL]       = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
+    [TOKEN_LESS]                = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
+    [TOKEN_LESS_EQUAL]          = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
     [TOKEN_IDENTIFIER]          = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_STRING]              = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_NUMBER]              = {CompileNumber,   NULL,          PRECEDENCE_NONE},
     [TOKEN_AND]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_CLASS]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_ELSE]                = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_FALSE]               = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_FALSE]               = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
     [TOKEN_FOR]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_FUN]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_IF]                  = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_NIL]                 = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_NIL]                 = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
     [TOKEN_OR]                  = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_PRINT]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RETURN]              = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_SUPER]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_THIS]                = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_TRUE]                = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_TRUE]                = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
     [TOKEN_VAR]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_WHILE]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_ERROR]               = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -167,7 +168,7 @@ static void CompileNumber()
 static void CompileGrouping()
 {
     CompileExpression();
-    ConsumeToken(TOKEN_LEFT_PARENTHESES, "Expect ')' after expression.");
+    ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after expression.");
 }
 
 /**
@@ -183,6 +184,9 @@ static void CompileUnary()
     // Emit the operator's instruction
     switch (op)
     {
+        case TOKEN_BANG:
+            EmitByte(OP_NOT);
+            break;
         case TOKEN_MINUS:
             EmitByte(OP_NEGATE);
             break;
@@ -203,6 +207,24 @@ static void CompileBinary()
 
     switch (op)
     {
+        case TOKEN_BANG_EQUAL:
+            EmitTwoBytes(OP_EQUAL, OP_NOT);
+            break;
+        case TOKEN_EQUAL_EQUAL:
+            EmitByte(OP_EQUAL);
+            break;
+        case TOKEN_GREATER:
+            EmitByte(OP_GREATER);
+            break;
+        case TOKEN_GREATER_EQUAL:
+            EmitTwoBytes(OP_LESS, OP_NOT);
+            break;
+        case TOKEN_LESS:
+            EmitByte(OP_LESS);
+            break;
+        case TOKEN_LESS_EQUAL:
+            EmitTwoBytes(OP_GREATER, OP_NOT);
+            break;
         case TOKEN_PLUS:
             EmitByte(OP_ADD);
             break;
@@ -216,6 +238,28 @@ static void CompileBinary()
             EmitByte(OP_DIVIDE);
             break;
         // Unknown operator
+        default:
+            return;
+    }
+}
+
+/**
+ * @brief Compiles a literal into the current Chunk.
+ */
+static void CompileLiteral()
+{
+    switch (parser.previous.type)
+    {
+        case TOKEN_FALSE:
+            EmitByte(OP_FALSE);
+            break;
+        case TOKEN_NIL:
+            EmitByte(OP_NIL);
+            break;
+        case TOKEN_TRUE:
+            EmitByte(OP_TRUE);
+            break;
+        // Unknown literal
         default:
             return;
     }
