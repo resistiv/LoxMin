@@ -77,12 +77,12 @@ void FreeValueArray(ValueArray* array);
 void PrintValue(Value value);
 
 /**
- * @brief Determines of two Values are equal.
+ * @brief Determines if two Values are equal.
  * 
- * @param a 
- * @param b 
- * @return true 
- * @return false 
+ * @param a The first Value.
+ * @param b The second Value.
+ * @return true The two Values are equal.
+ * @return false The two Values are not equal.
  */
 bool AreValuesEqual(Value a, Value b);
 
