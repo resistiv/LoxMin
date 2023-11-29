@@ -41,7 +41,7 @@ typedef enum
 /**
  * @brief Represents a parsing function.
  */
-typedef void (*ParseFn)();
+typedef void (*ParseFn)(bool canAssign);
 
 /**
  * @brief Stores a parsing rule for an operation.
@@ -54,18 +54,30 @@ typedef struct
 } ParseRule;
 
 static void CompileExpression();
-static void CompileNumber();
-static void CompileGrouping();
-static void CompileUnary();
-static void CompileBinary();
-static void CompileLiteral();
-static void CompileString();
+static void CompileDeclaration();
+static void CompileVariableDeclaration();
+static void CompileStatement();
+static void CompileExpressionStatement();
+static void CompilePrint();
+static void CompileNumber(bool canAssign);
+static void CompileGrouping(bool canAssign);
+static void CompileUnary(bool canAssign);
+static void CompileBinary(bool canAssign);
+static void CompileLiteral(bool canAssign);
+static void CompileString(bool canAssign);
+static void CompileVariable(bool canAssign);
+static void CompileNamedVariable(Token name, bool canAssign);
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
+static uint8_t ParseVariable(const char* errorMessage);
+static void DefineVariable(uint8_t global);
 
 static void NextToken();
 static void ConsumeToken(TokenType type, const char* message);
+static bool MatchToken(TokenType type);
+static bool CheckToken(TokenType type);
+static void SynchronizeState();
 
 static void EmitByte(uint8_t byte);
 static void EmitTwoBytes(uint8_t byte1, uint8_t byte2);
@@ -73,6 +85,7 @@ static void EmitConstant(Value value);
 static void EmitReturn();
 
 static uint8_t MakeConstant(Value value);
+static uint8_t MakeIdentifierConstant(Token* name);
 
 static Chunk* CurrentChunk();
 static void EndCompiler();
@@ -105,7 +118,7 @@ ParseRule rules[] =
     [TOKEN_GREATER_EQUAL]       = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
     [TOKEN_LESS]                = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
     [TOKEN_LESS_EQUAL]          = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
-    [TOKEN_IDENTIFIER]          = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_IDENTIFIER]          = {CompileVariable, NULL,          PRECEDENCE_NONE},
     [TOKEN_STRING]              = {CompileString,   NULL,          PRECEDENCE_NONE},
     [TOKEN_NUMBER]              = {CompileNumber,   NULL,          PRECEDENCE_NONE},
     [TOKEN_AND]                 = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -140,8 +153,12 @@ bool Compile(const char* source, Chunk* chunk)
     parser.panic = false;
 
     NextToken();
-    CompileExpression();
-    ConsumeToken(TOKEN_EOF, "Expect end of expression.");
+    
+    while (!MatchToken(TOKEN_EOF))
+    {
+        CompileDeclaration();
+    }
+
     EndCompiler();
     return !parser.hadError;
 }
@@ -155,9 +172,81 @@ static void CompileExpression()
 }
 
 /**
+ * @brief Compiles a declaration into the current Chunk.
+ */
+static void CompileDeclaration()
+{
+    if (MatchToken(TOKEN_VAR))
+    {
+        CompileVariableDeclaration();
+    }
+    else
+    {
+        CompileStatement();
+    }
+
+    if (parser.panic)
+    {
+        SynchronizeState();
+    }
+}
+
+/**
+ * @brief Compiles a variable declaration into the current Chunk.
+ */
+static void CompileVariableDeclaration()
+{
+    uint8_t global = ParseVariable("Expect variable name.");
+
+    if (MatchToken(TOKEN_EQUAL))
+    {
+        CompileExpression();
+    }
+    else
+    {
+        EmitByte(OP_NIL);
+    }
+    ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after variable declaration.");
+
+    DefineVariable(global);
+}
+
+/**
+ * @brief Compiles a statement into the current Chunk.
+ */
+static void CompileStatement()
+{
+    if (MatchToken(TOKEN_PRINT))
+    {
+        CompilePrint();
+    }
+    else
+    {
+        CompileExpressionStatement();
+    }
+}
+
+static void CompileExpressionStatement()
+{
+    CompileExpression();
+    ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after expression.");
+    EmitByte(OP_POP);
+}
+
+/**
+ * @brief Compiles a print statement into the current Chunk.
+ */
+static void CompilePrint()
+{
+    CompileExpression();
+    ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after value.");
+    EmitByte(OP_PRINT);
+}
+
+/**
  * @brief Compiles a number into the current Chunk.
  */
-static void CompileNumber()
+static void CompileNumber(bool canAssign)
 {
     double value = strtod(parser.previous.start, NULL);
     EmitConstant(NUMBER_VALUE(value));
@@ -166,7 +255,7 @@ static void CompileNumber()
 /**
  * @brief Compiles a grouping into the current Chunk.
  */
-static void CompileGrouping()
+static void CompileGrouping(bool canAssign)
 {
     CompileExpression();
     ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after expression.");
@@ -175,7 +264,7 @@ static void CompileGrouping()
 /**
  * @brief Compiles an unary expression into the current Chunk.
  */
-static void CompileUnary()
+static void CompileUnary(bool canAssign)
 {
     TokenType op = parser.previous.type;
 
@@ -200,7 +289,7 @@ static void CompileUnary()
 /**
  * @brief Compiles a binary expression into the current Chunk.
  */
-static void CompileBinary()
+static void CompileBinary(bool canAssign)
 {
     TokenType op = parser.previous.type;
     ParseRule* rule = GetParseRule(op);
@@ -247,7 +336,7 @@ static void CompileBinary()
 /**
  * @brief Compiles a literal into the current Chunk.
  */
-static void CompileLiteral()
+static void CompileLiteral(bool canAssign)
 {
     switch (parser.previous.type)
     {
@@ -269,9 +358,37 @@ static void CompileLiteral()
 /**
  * @brief Compiles a string into the current Chunk.
  */
-static void CompileString()
+static void CompileString(bool canAssign)
 {
     EmitConstant(OBJECT_VALUE(CopyString(parser.previous.start + 1, parser.previous.length - 2)));
+}
+
+/**
+ * @brief Compiles a variable into the current Chunk.
+ */
+static void CompileVariable(bool canAssign)
+{
+    CompileNamedVariable(parser.previous, canAssign);
+}
+
+/**
+ * @brief Compiles a named variable.
+ * 
+ * @param name The name Token of the variable.
+ */
+static void CompileNamedVariable(Token name, bool canAssign)
+{
+    uint8_t arg = MakeIdentifierConstant(&name);
+
+    if (canAssign && MatchToken(TOKEN_EQUAL))
+    {
+        CompileExpression();
+        EmitTwoBytes(OP_SET_GLOBAL, arg);
+    }
+    else
+    {
+        EmitTwoBytes(OP_GET_GLOBAL, arg);
+    }
 }
 
 /**
@@ -290,17 +407,21 @@ static void ParsePrecedence(Precedence precedence)
         Error("Expect expression.");
         return;
     }
-    else
-    {
-        prefixRule();
-    }
+
+    bool canAssign = precedence <= PRECEDENCE_ASSIGNMENT;
+    prefixRule(canAssign);
 
     // Attempt to parse out an infix
     while (precedence <= GetParseRule(parser.current.type)->precedence)
     {
         NextToken();
         ParseFn infixRule = GetParseRule(parser.previous.type)->infix;
-        infixRule();
+        infixRule(canAssign);
+    }
+
+    if (canAssign && MatchToken(TOKEN_EQUAL))
+    {
+        Error("Invalid assignment target.");
     }
 }
 
@@ -313,6 +434,28 @@ static void ParsePrecedence(Precedence precedence)
 static ParseRule* GetParseRule(TokenType type)
 {
     return &rules[type];
+}
+
+/**
+ * @brief Parses out a variable.
+ * 
+ * @param errorMessage An error message if the parsing fails.
+ * @return uint8_t An identifier constant.
+ */
+static uint8_t ParseVariable(const char* errorMessage)
+{
+    ConsumeToken(TOKEN_IDENTIFIER, errorMessage);
+    return MakeIdentifierConstant(&parser.previous);
+}
+
+/**
+ * @brief Defines a global variable.
+ * 
+ * @param global A variable index.
+ */
+static void DefineVariable(uint8_t global)
+{
+    EmitTwoBytes(OP_DEFINE_GLOBAL, global);
 }
 
 /**
@@ -350,6 +493,72 @@ static void ConsumeToken(TokenType type, const char* message)
     else
     {
         ErrorAtCurrent(message);
+    }
+}
+
+/**
+ * @brief Consumes the next Token if it is of a matching TokenType.
+ * 
+ * @param type A TokenType to match.
+ * @return true The Token's type matched the specified type and was consumed.
+ * @return false The Token's type did not match.
+ */
+static bool MatchToken(TokenType type)
+{
+    if (!CheckToken(type))
+    {
+        return false;
+    }
+    else
+    {
+        NextToken();
+        return true;
+    }
+}
+
+/**
+ * @brief Checks if the next Token is of a matching TokenType.
+ * 
+ * @param type A TokenType to check.
+ * @return true The Token's type matched the specified type.
+ * @return false The Token's type did not match.
+ */
+static bool CheckToken(TokenType type)
+{
+    return parser.current.type == type;
+}
+
+/**
+ * @brief Attempts to synchronize Parser state after an error.
+ */
+static void SynchronizeState()
+{
+    parser.panic = false;
+
+    while (parser.current.type != TOKEN_EOF)
+    {
+        if (parser.previous.type == TOKEN_SEMICOLON)
+        {
+            return;
+        }
+
+        switch (parser.current.type)
+        {
+            case TOKEN_CLASS:
+            case TOKEN_FUN:
+            case TOKEN_VAR:
+            case TOKEN_FOR:
+            case TOKEN_IF:
+            case TOKEN_WHILE:
+            case TOKEN_PRINT:
+            case TOKEN_RETURN:
+                return;
+
+            default:
+                ; // Do nothing
+        }
+
+        NextToken();
     }
 }
 
@@ -409,6 +618,17 @@ static uint8_t MakeConstant(Value value)
     }
 
     return (uint8_t)constant;
+}
+
+/**
+ * @brief Creates an identifier constant.
+ * 
+ * @param name The name Token of the identifier.
+ * @return uint8_t An identifier constant.
+ */
+static uint8_t MakeIdentifierConstant(Token* name)
+{
+    return MakeConstant(OBJECT_VALUE(CopyString(name->start, name->length)));
 }
 
 /**

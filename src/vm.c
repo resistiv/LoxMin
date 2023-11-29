@@ -28,11 +28,13 @@ void InitVM()
 {
     ResetStack();
     vm.objects = NULL;
+    InitTable(&vm.globals);
     InitTable(&vm.strings);
 }
 
 void FreeVM()
 {
+    FreeTable(&vm.globals);
     FreeTable(&vm.strings);
     FreeObjects();
 }
@@ -88,6 +90,7 @@ static InterpretResult Run()
 {
 #define READ_BYTE() (*vm.ip++)
 #define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+#define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op) \
         do \
         { \
@@ -123,30 +126,80 @@ static InterpretResult Run()
         switch (instruction)
         {
             case OP_CONSTANT:
+            {
                 Value constant = READ_CONSTANT();
                 StackPush(constant);
                 break;
+            }
             case OP_NIL:
+            {
                 StackPush(NIL_VALUE);
                 break;
+            }
             case OP_TRUE:
+            {
                 StackPush(BOOL_VALUE(true));
                 break;
+            }
             case OP_FALSE:
+            {
                 StackPush(BOOL_VALUE(false));
                 break;
+            }
+            case OP_POP:
+            {
+                StackPop();
+                break;
+            }
+            case OP_GET_GLOBAL:
+            {
+                ObjectString* name = READ_STRING();
+                Value value;
+                if (!TableGet(&vm.globals, name, &value))
+                {
+                    RuntimeError("Undefined variable '%s'.", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                StackPush(value);
+                break;
+            }
+            case OP_DEFINE_GLOBAL:
+            {
+                ObjectString* name = READ_STRING();
+                TableSet(&vm.globals, name, StackPeek(0));
+                StackPop();
+                break;
+            }
+            case OP_SET_GLOBAL:
+            {
+                ObjectString* name = READ_STRING();
+                if (TableSet(&vm.globals, name, StackPeek(0)))
+                {
+                    TableDelete(&vm.globals, name);
+                    RuntimeError("Undefined variable '%s'.", name->chars);
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
             case OP_EQUAL:
+            {
                 Value b = StackPop();
                 Value a = StackPop();
                 StackPush(BOOL_VALUE(AreValuesEqual(a, b)));
                 break;
+            }
             case OP_GREATER:
+            {
                 BINARY_OP(BOOL_VALUE, >);
                 break;
+            }
             case OP_LESS:
+            {
                 BINARY_OP(BOOL_VALUE, <);
                 break;
+            }
             case OP_ADD:
+            {
                 if (IS_STRING(StackPeek(0)) && IS_STRING(StackPeek(1)))
                 {
                     ConcatenateStrings();
@@ -163,19 +216,29 @@ static InterpretResult Run()
                     return INTERPRET_RUNTIME_ERROR;
                 }
                 break;
+            }
             case OP_SUBTRACT:
+            {
                 BINARY_OP(NUMBER_VALUE, -);
                 break;
+            }
             case OP_MULTIPLY:
+            {
                 BINARY_OP(NUMBER_VALUE, *);
                 break;
+            }
             case OP_DIVIDE:
+            {
                 BINARY_OP(NUMBER_VALUE, /);
                 break;
+            }
             case OP_NOT:
+            {
                 StackPush(BOOL_VALUE(IsFalsey(StackPop())));
                 break;
+            }
             case OP_NEGATE:
+            {
                 if (!IS_NUMBER(StackPeek(0)))
                 {
                     RuntimeError("Operand must be a number.");
@@ -183,15 +246,24 @@ static InterpretResult Run()
                 }
                 StackPush(NUMBER_VALUE(-AS_NUMBER(StackPop())));
                 break;
-            case OP_RETURN:
+            }
+            case OP_PRINT:
+            {
                 PrintValue(StackPop());
                 printf("\n");
+                break;
+            }
+            case OP_RETURN:
+            {
+                // Exit!
                 return INTERPRET_OK;
+            }
         }
     }
 
 #undef READ_BYTE
 #undef READ_CONSTANT
+#undef READ_STRING
 #undef BINARY_OP
 }
 

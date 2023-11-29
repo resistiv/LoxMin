@@ -16,6 +16,7 @@ typedef struct
     uint8_t* ip;
     Value stack[STACK_MAX];
     Value* sp;
+    Table globals;
     Table strings;
     Object* objects;
 } VM;
