@@ -151,6 +151,18 @@ static InterpretResult Run()
                 StackPop();
                 break;
             }
+            case OP_GET_LOCAL:
+            {
+                uint8_t slot = READ_BYTE();
+                StackPush(vm.stack[slot]);
+                break;
+            }
+            case OP_SET_LOCAL:
+            {
+                uint8_t slot = READ_BYTE();
+                vm.stack[slot] = StackPeek(0);
+                break;
+            }
             case OP_GET_GLOBAL:
             {
                 ObjectString* name = READ_STRING();
