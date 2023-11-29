@@ -2,6 +2,13 @@
 #define loxmin_memory_h
 
 #include "common.h"
+#include "object.h"
+
+/**
+ * @brief Allocates an array of a given type and size.
+ */
+#define ALLOCATE(type, count) \
+        (type*)Reallocate(NULL, 0, sizeof(type) * (count))
 
 /**
  * @brief Determines a new array capacity based on the current capacity.
@@ -15,6 +22,12 @@
 #define GROW_ARRAY(type, pointer, oldCount, newCount) \
         (type*)Reallocate(pointer, sizeof(type) * (oldCount), \
                           sizeof(type) * (newCount))
+
+/**
+ * @brief Frees a piece of data.
+ */
+#define FREE(type, pointer) \
+        Reallocate(pointer, sizeof(type), 0)
 
 /**
  * @brief Frees an array.
@@ -31,5 +44,10 @@
  * @return void* A pointer to the new, reallocated memory location.
  */
 void* Reallocate(void* pointer, size_t oldSize, size_t newSize);
+
+/**
+ * @brief Frees all heap-stored objects.
+ */
+void FreeObjects();
 
 #endif

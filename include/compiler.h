@@ -1,6 +1,7 @@
 #ifndef loxmin_compiler_h
 #define loxmin_compiler_h
 
+#include "object.h"
 #include "vm.h"
 
 /**

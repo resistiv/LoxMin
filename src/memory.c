@@ -1,5 +1,8 @@
 #include <stdlib.h>
 #include "memory.h"
+#include "vm.h"
+
+static void FreeObject(Object* object);
 
 void* Reallocate(void* pointer, size_t oldSize, size_t newSize)
 {
@@ -19,5 +22,33 @@ void* Reallocate(void* pointer, size_t oldSize, size_t newSize)
         }
 
         return result;
+    }
+}
+
+void FreeObjects()
+{
+    Object* object = vm.objects;
+    while (object != NULL)
+    {
+        Object* next = object->next;
+        FreeObject(object);
+        object = next;
+    }
+}
+
+/**
+ * @brief Frees an Object.
+ * 
+ * @param object An Object to free.
+ */
+static void FreeObject(Object* object)
+{
+    switch (object->type)
+    {
+        case OBJECT_STRING:
+            ObjectString* string = (ObjectString*)object;
+            FREE_ARRAY(char, string->chars, string->length + 1);
+            FREE(ObjectString, object);
+            break;
     }
 }

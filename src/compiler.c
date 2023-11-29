@@ -59,6 +59,7 @@ static void CompileGrouping();
 static void CompileUnary();
 static void CompileBinary();
 static void CompileLiteral();
+static void CompileString();
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
@@ -105,7 +106,7 @@ ParseRule rules[] =
     [TOKEN_LESS]                = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
     [TOKEN_LESS_EQUAL]          = {NULL,            CompileBinary, PRECEDENCE_COMPARISON},
     [TOKEN_IDENTIFIER]          = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_STRING]              = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_STRING]              = {CompileString,   NULL,          PRECEDENCE_NONE},
     [TOKEN_NUMBER]              = {CompileNumber,   NULL,          PRECEDENCE_NONE},
     [TOKEN_AND]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_CLASS]               = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -263,6 +264,14 @@ static void CompileLiteral()
         default:
             return;
     }
+}
+
+/**
+ * @brief Compiles a string into the current Chunk.
+ */
+static void CompileString()
+{
+    EmitConstant(OBJECT_VALUE(CopyString(parser.previous.start + 1, parser.previous.length - 2)));
 }
 
 /**

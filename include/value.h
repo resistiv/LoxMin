@@ -3,6 +3,9 @@
 
 #include "common.h"
 
+typedef struct Object Object;
+typedef struct ObjectString ObjectString;
+
 /**
  * @brief Enumerates all available Value types.
  */
@@ -11,6 +14,7 @@ typedef enum
     VALUE_BOOL,
     VALUE_NIL,
     VALUE_NUMBER,
+    VALUE_OBJECT,
 } ValueType;
 
 /**
@@ -23,19 +27,23 @@ typedef struct
     {
         bool boolean;
         double number;
+        Object* obj;
     } as;
 } Value;
 
 #define IS_BOOL(value)   ((value).type == VALUE_BOOL)
 #define IS_NIL(value)    ((value).type == VALUE_NIL)
 #define IS_NUMBER(value) ((value).type == VALUE_NUMBER)
+#define IS_OBJECT(value) ((value).type == VALUE_OBJECT)
 
 #define AS_BOOL(value)   ((value).as.boolean)
 #define AS_NUMBER(value) ((value).as.number)
+#define AS_OBJECT(value) ((value).as.obj)
 
-#define BOOL_VALUE(value)   ((Value){VALUE_BOOL,   {.boolean = value}})
-#define NIL_VALUE           ((Value){VALUE_NIL,    {.number = 0}})
-#define NUMBER_VALUE(value) ((Value){VALUE_NUMBER, {.number = value}})
+#define BOOL_VALUE(value)    ((Value){VALUE_BOOL,   {.boolean = value}})
+#define NIL_VALUE            ((Value){VALUE_NIL,    {.number = 0}})
+#define NUMBER_VALUE(value)  ((Value){VALUE_NUMBER, {.number = value}})
+#define OBJECT_VALUE(object) ((Value){VALUE_OBJECT, {.obj = (Object*)object}})
 
 /**
  * @brief Stores a series of values.

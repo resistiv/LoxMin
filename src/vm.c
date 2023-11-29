@@ -1,13 +1,17 @@
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
+#include "memory.h"
+#include "object.h"
 #include "vm.h"
 
 static InterpretResult Run();
 static Value StackPeek(int distance);
 static bool IsFalsey(Value value);
+static void ConcatenateStrings();
 static void RuntimeError(const char* format, ...);
 
 VM vm;
@@ -23,11 +27,12 @@ static void ResetStack()
 void InitVM()
 {
     ResetStack();
+    vm.objects = NULL;
 }
 
 void FreeVM()
 {
-
+    FreeObjects();
 }
 
 void StackPush(Value value)
@@ -140,7 +145,21 @@ static InterpretResult Run()
                 BINARY_OP(BOOL_VALUE, <);
                 break;
             case OP_ADD:
-                BINARY_OP(NUMBER_VALUE, +);
+                if (IS_STRING(StackPeek(0)) && IS_STRING(StackPeek(1)))
+                {
+                    ConcatenateStrings();
+                }
+                else if (IS_NUMBER(StackPeek(0)) && IS_NUMBER(StackPeek(1)))
+                {
+                    double b = AS_NUMBER(StackPop());
+                    double a = AS_NUMBER(StackPop());
+                    StackPush(NUMBER_VALUE(a + b));
+                }
+                else
+                {
+                    RuntimeError("Operands must be two numbers or two strings.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
                 break;
             case OP_SUBTRACT:
                 BINARY_OP(NUMBER_VALUE, -);
@@ -184,6 +203,24 @@ static InterpretResult Run()
 static bool IsFalsey(Value value)
 {
     return IS_NIL(value) || (IS_BOOL(value) && !AS_BOOL(value));
+}
+
+/**
+ * @brief Concatenates two strings from the stack.
+ */
+static void ConcatenateStrings()
+{
+    ObjectString* b = AS_STRING(StackPop());
+    ObjectString* a = AS_STRING(StackPop());
+
+    int length = a->length + b->length;
+    char* chars = ALLOCATE(char, length + 1);
+    memcpy(chars, a->chars, a->length);
+    memcpy(chars + a->length, b->chars, b->length);
+    chars[length] = '\0';
+
+    ObjectString* result = TakeString(chars, length);
+    StackPush(OBJECT_VALUE(result));
 }
 
 /**
