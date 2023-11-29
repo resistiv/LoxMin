@@ -80,6 +80,7 @@ static void CompileStatement();
 static void CompileExpressionStatement();
 static void CompilePrint();
 static void CompileBlock();
+static void CompileIfStatement();
 static void CompileNumber(bool canAssign);
 static void CompileGrouping(bool canAssign);
 static void CompileUnary(bool canAssign);
@@ -106,6 +107,8 @@ static void SynchronizeState();
 
 static void EmitByte(uint8_t byte);
 static void EmitTwoBytes(uint8_t byte1, uint8_t byte2);
+static int EmitJump(uint8_t instruction);
+static void PatchJump(int offset);
 static void EmitConstant(Value value);
 static void EmitReturn();
 
@@ -252,6 +255,10 @@ static void CompileStatement()
     {
         CompilePrint();
     }
+    else if (MatchToken(TOKEN_IF))
+    {
+        CompileIfStatement();
+    }
     else if (MatchToken(TOKEN_LEFT_BRACE))
     {
         BeginScope();
@@ -292,6 +299,21 @@ static void CompileBlock()
     }
 
     ConsumeToken(TOKEN_RIGHT_BRACE, "Expect '}' after block.");
+}
+
+/**
+ * @brief Compiles an if statement into the current Chunk.
+ */
+static void CompileIfStatement()
+{
+    ConsumeToken(TOKEN_LEFT_PARENTHESES, "Expect '(' after 'if'.");
+    CompileExpression();
+    ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after condition.");
+
+    int thenJump = EmitJump(OP_JUMP_IF_FALSE);
+    CompileStatement();
+
+    PatchJump(thenJump);
 }
 
 /**
@@ -738,6 +760,38 @@ static void EmitTwoBytes(uint8_t byte1, uint8_t byte2)
 {
     EmitByte(byte1);
     EmitByte(byte2);
+}
+
+/**
+ * @brief Appends a jump instruction to the current Chunk.
+ * 
+ * @param instruction A jump instruction to append.
+ * @return int The index of the instruction.
+ */
+static int EmitJump(uint8_t instruction)
+{
+    EmitByte(instruction);
+    EmitTwoBytes(0xff, 0xff);
+    return CurrentChunk()->count - 2;
+}
+
+/**
+ * @brief Patches a previously written jump instruction with the proper offset to jump to.
+ * 
+ * @param offset An offset to jump to. 
+ */
+static void PatchJump(int offset)
+{
+    // -2 adjusts for IP overshoot of current instruction
+    int jump = CurrentChunk()->count - offset - 2;
+
+    if (jump > UINT16_MAX)
+    {
+        Error("Too much code to jump over.");
+    }
+
+    CurrentChunk()->code[offset] = (jump >> 8) & 0xff;
+    CurrentChunk()->code[offset + 1] = jump & 0xff;
 }
 
 /**
