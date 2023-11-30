@@ -5,7 +5,7 @@
 static int SimpleInstruction(const char* name, int offset);
 static int ConstantInstruction(const char* name, Chunk* chunk, int offset);
 static int ByteInstruction(const char* name, Chunk* chunk, int offset);
-
+static int JumpInstruction(const char* name, int sign, Chunk* chunk, int offset);
 
 void DisassembleChunk(Chunk* chunk, const char* name)
 {
@@ -73,6 +73,12 @@ int DisassembleInstruction(Chunk* chunk, int offset)
             return SimpleInstruction("OP_NEGATE", offset);
         case OP_PRINT:
             return SimpleInstruction("OP_PRINT", offset);
+        case OP_JUMP:
+            return JumpInstruction("OP_JUMP", 1, chunk, offset);
+        case OP_JUMP_IF_FALSE:
+            return JumpInstruction("OP_JUMP_IF_FALSE", 1, chunk, offset);
+        case OP_LOOP:
+            return JumpInstruction("OP_LOOP", -1, chunk, offset);
         case OP_RETURN:
             return SimpleInstruction("OP_RETURN", offset);
         default:
@@ -119,11 +125,28 @@ static int ConstantInstruction(const char* name, Chunk* chunk, int offset)
  * @param name The name of the instruction.
  * @param chunk The chunk where the instruction resides.
  * @param offset The offset of the instruction.
- * @return int The ofset of the next instruction.
+ * @return int The offset of the next instruction.
  */
 static int ByteInstruction(const char* name, Chunk* chunk, int offset)
 {
     uint8_t slot = chunk->code[offset + 1];
     printf("%-16s %4d\n", name, slot);
     return offset + 2;
+}
+
+/**
+ * @brief Prints a jump instruction.
+ * 
+ * @param name The name of the instruction.
+ * @param sign A signed integer, either 1 or -1, representing the direction of the jump.
+ * @param chunk The chunk where the instruction resides.
+ * @param offset The offset of the instruction.
+ * @return int The offset of the next instruction.
+ */
+static int JumpInstruction(const char* name, int sign, Chunk* chunk, int offset)
+{
+    uint16_t jump = (uint16_t)(chunk->code[offset + 1] << 8);
+    jump |= chunk->code[offset + 2];
+    printf("%-16s %4d -> %d\n", name, offset, offset + 3 + sign * jump);
+    return offset + 3;
 }

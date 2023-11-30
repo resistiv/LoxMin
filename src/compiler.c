@@ -81,10 +81,14 @@ static void CompileExpressionStatement();
 static void CompilePrint();
 static void CompileBlock();
 static void CompileIfStatement();
+static void CompileWhileStatement();
+static void CompileForStatement();
 static void CompileNumber(bool canAssign);
 static void CompileGrouping(bool canAssign);
 static void CompileUnary(bool canAssign);
 static void CompileBinary(bool canAssign);
+static void CompileAnd(bool canAssign);
+static void CompileOr(bool canAssign);
 static void CompileLiteral(bool canAssign);
 static void CompileString(bool canAssign);
 static void CompileVariable(bool canAssign);
@@ -109,6 +113,7 @@ static void EmitByte(uint8_t byte);
 static void EmitTwoBytes(uint8_t byte1, uint8_t byte2);
 static int EmitJump(uint8_t instruction);
 static void PatchJump(int offset);
+static void EmitLoop(int loopStart);
 static void EmitConstant(Value value);
 static void EmitReturn();
 
@@ -153,7 +158,7 @@ ParseRule rules[] =
     [TOKEN_IDENTIFIER]          = {CompileVariable, NULL,          PRECEDENCE_NONE},
     [TOKEN_STRING]              = {CompileString,   NULL,          PRECEDENCE_NONE},
     [TOKEN_NUMBER]              = {CompileNumber,   NULL,          PRECEDENCE_NONE},
-    [TOKEN_AND]                 = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_AND]                 = {NULL,            CompileAnd,    PRECEDENCE_AND},
     [TOKEN_CLASS]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_ELSE]                = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_FALSE]               = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
@@ -161,7 +166,7 @@ ParseRule rules[] =
     [TOKEN_FUN]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_IF]                  = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_NIL]                 = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
-    [TOKEN_OR]                  = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_OR]                  = {NULL,            CompileOr,     PRECEDENCE_OR},
     [TOKEN_PRINT]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RETURN]              = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_SUPER]               = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -255,9 +260,17 @@ static void CompileStatement()
     {
         CompilePrint();
     }
+    else if (MatchToken(TOKEN_FOR))
+    {
+        CompileForStatement();   
+    }
     else if (MatchToken(TOKEN_IF))
     {
         CompileIfStatement();
+    }
+    else if (MatchToken(TOKEN_WHILE))
+    {
+        CompileWhileStatement();
     }
     else if (MatchToken(TOKEN_LEFT_BRACE))
     {
@@ -311,9 +324,94 @@ static void CompileIfStatement()
     ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after condition.");
 
     int thenJump = EmitJump(OP_JUMP_IF_FALSE);
+    EmitByte(OP_POP);
     CompileStatement();
 
+    int elseJump = EmitJump(OP_JUMP);
+
     PatchJump(thenJump);
+    EmitByte(OP_POP);
+
+    if (MatchToken(TOKEN_ELSE))
+    {
+        CompileStatement();
+    }
+    PatchJump(elseJump);
+}
+
+/**
+ * @brief Compiles a while loop into the current Chunk.
+ */
+static void CompileWhileStatement()
+{
+    int loopStart = CurrentChunk()->count;
+    ConsumeToken(TOKEN_LEFT_PARENTHESES, "Expect '(' after 'while'.");
+    CompileExpression();
+    ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after condition.");
+
+    int exitJump = EmitJump(OP_JUMP_IF_FALSE);
+    EmitByte(OP_POP);
+    CompileStatement();
+    EmitLoop(loopStart);
+
+    PatchJump(exitJump);
+    EmitByte(OP_POP);
+}
+
+/**
+ * @brief Compiles a for loop into the current Chunk.
+ */
+static void CompileForStatement()
+{
+    BeginScope();
+    ConsumeToken(TOKEN_LEFT_PARENTHESES, "Expect '(' after 'for'.");
+    if (MatchToken(TOKEN_SEMICOLON))
+    {
+        // No initializer.
+    }
+    else if (MatchToken(TOKEN_VAR))
+    {
+        CompileVariableDeclaration();
+    }
+    else
+    {
+        CompileExpressionStatement();
+    }
+
+    int loopStart = CurrentChunk()->count;
+    int exitJump = -1;
+    if (!MatchToken(TOKEN_SEMICOLON))
+    {
+        CompileExpression();
+        ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after loop condition.");
+
+        exitJump = EmitJump(OP_JUMP_IF_FALSE);
+        EmitByte(OP_POP);
+    }
+
+    if (!MatchToken(TOKEN_RIGHT_PARENTHESES))
+    {
+        int bodyJump = EmitJump(OP_JUMP);
+        int incrementStart = CurrentChunk()->count;
+        CompileExpression();
+        EmitByte(OP_POP);
+        ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after for clauses.");
+
+        EmitLoop(loopStart);
+        loopStart = incrementStart;
+        PatchJump(bodyJump);
+    }
+
+    CompileStatement();
+    EmitLoop(loopStart);
+
+    if (exitJump != -1)
+    {
+        PatchJump(exitJump);
+        EmitByte(OP_POP);
+    }
+
+    EndScope();
 }
 
 /**
@@ -404,6 +502,34 @@ static void CompileBinary(bool canAssign)
         default:
             return;
     }
+}
+
+/**
+ * @brief Compiles an "and" logical operator into the current Chunk.
+ */
+static void CompileAnd(bool canAssign)
+{
+    int endJump = EmitJump(OP_JUMP_IF_FALSE);
+
+    EmitByte(OP_POP);
+    ParsePrecedence(PRECEDENCE_AND);
+
+    PatchJump(endJump);
+}
+
+/**
+ * @brief Compiles an "or" logical operator into the current Chunk.
+ */
+static void CompileOr(bool canAssign)
+{
+    int elseJump = EmitJump(OP_JUMP_IF_FALSE);
+    int endJump = EmitJump(OP_JUMP);
+
+    PatchJump(elseJump);
+    EmitByte(OP_POP);
+
+    ParsePrecedence(PRECEDENCE_OR);
+    PatchJump(endJump);
 }
 
 /**
@@ -792,6 +918,24 @@ static void PatchJump(int offset)
 
     CurrentChunk()->code[offset] = (jump >> 8) & 0xff;
     CurrentChunk()->code[offset + 1] = jump & 0xff;
+}
+
+/**
+ * @brief Appends a loop to the current Chunk.
+ * 
+ * @param loopStart The starting offset of the loop.
+ */
+static void EmitLoop(int loopStart)
+{
+    EmitByte(OP_LOOP);
+
+    int offset = CurrentChunk()->count - loopStart + 2;
+    if (offset > UINT16_MAX)
+    {
+        Error("Loop body too large.");
+    }
+
+    EmitTwoBytes((offset >> 8) & 0xff, offset & 0xff);
 }
 
 /**
