@@ -45,10 +45,22 @@ static void FreeObject(Object* object)
 {
     switch (object->type)
     {
+        case OBJECT_FUNCTION:
+        {
+            ObjectFunction* function = (ObjectFunction*)object;
+            FreeChunk(&function->chunk);
+            FREE(ObjectFunction, object);
+            break;
+        }
+        case OBJECT_NATIVE:
+            FREE(ObjectNative, object);
+            break;
         case OBJECT_STRING:
+        {
             ObjectString* string = (ObjectString*)object;
             FREE_ARRAY(char, string->chars, string->length + 1);
             FREE(ObjectString, object);
             break;
+        }
     }
 }

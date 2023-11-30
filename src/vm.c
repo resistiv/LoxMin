@@ -1,6 +1,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "common.h"
 #include "compiler.h"
 #include "debug.h"
@@ -10,6 +11,10 @@
 
 static InterpretResult Run();
 static Value StackPeek(int distance);
+static bool CallValue(Value callee, int argCount);
+static bool Call(ObjectFunction* function, int argCount);
+static void DefineNative(const char* name, NativeFn function);
+static Value ClockNative(int argCount, Value* args);
 static bool IsFalsey(Value value);
 static void ConcatenateStrings();
 static void RuntimeError(const char* format, ...);
@@ -22,6 +27,7 @@ VM vm;
 static void ResetStack()
 {
     vm.sp = vm.stack;
+    vm.frameCount = 0;
 }
 
 void InitVM()
@@ -30,6 +36,8 @@ void InitVM()
     vm.objects = NULL;
     InitTable(&vm.globals);
     InitTable(&vm.strings);
+
+    DefineNative("clock", ClockNative);
 }
 
 void FreeVM()
@@ -62,23 +70,16 @@ static Value StackPeek(int distance)
 
 InterpretResult Interpret(const char* source)
 {
-    Chunk chunk;
-    InitChunk(&chunk);
-
-    // Quit on compiler error
-    if (!Compile(source, &chunk))
+    ObjectFunction* function = Compile(source);
+    if (function == NULL)
     {
-        FreeChunk(&chunk);
         return INTERPRET_COMPILE_ERROR;
     }
 
-    vm.chunk = &chunk;
-    vm.ip = vm.chunk->code;
+    StackPush(OBJECT_VALUE(function));
+    Call(function, 0);
 
-    InterpretResult result = Run();
-
-    FreeChunk(&chunk);
-    return result;
+    return Run();
 }
 
 /**
@@ -88,10 +89,12 @@ InterpretResult Interpret(const char* source)
  */
 static InterpretResult Run()
 {
-#define READ_BYTE() (*vm.ip++)
+    CallFrame* frame = &vm.frames[vm.frameCount - 1];
+
+#define READ_BYTE() (*frame->ip++)
 #define READ_SHORT() \
-        (vm.ip += 2, (uint16_t)((vm.ip[-2] << 8) | vm.ip[-1]))
-#define READ_CONSTANT() (vm.chunk->constants.values[READ_BYTE()])
+        (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
+#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op) \
         do \
@@ -121,7 +124,7 @@ static InterpretResult Run()
         printf("\n");
 
         // Disassemble and print current instruction
-        DisassembleInstruction(vm.chunk, (int)(vm.ip - vm.chunk->code));
+        DisassembleInstruction(&frame->function->chunk, (int)(frame->ip - frame->function->chunk.code));
 #endif
 
         uint8_t instruction = READ_BYTE();
@@ -156,13 +159,13 @@ static InterpretResult Run()
             case OP_GET_LOCAL:
             {
                 uint8_t slot = READ_BYTE();
-                StackPush(vm.stack[slot]);
+                StackPush(frame->slots[slot]);
                 break;
             }
             case OP_SET_LOCAL:
             {
                 uint8_t slot = READ_BYTE();
-                vm.stack[slot] = StackPeek(0);
+                frame->slots[slot] = StackPeek(0);
                 break;
             }
             case OP_GET_GLOBAL:
@@ -270,7 +273,7 @@ static InterpretResult Run()
             case OP_JUMP:
             {
                 uint16_t offset = READ_SHORT();
-                vm.ip += offset;
+                frame->ip += offset;
                 break;
             }
             case OP_JUMP_IF_FALSE:
@@ -278,20 +281,40 @@ static InterpretResult Run()
                 uint16_t offset = READ_SHORT();
                 if (IsFalsey(StackPeek(0)))
                 {
-                    vm.ip += offset;
+                    frame->ip += offset;
                 }
                 break;
             }
             case OP_LOOP:
             {
                 uint16_t offset = READ_SHORT();
-                vm.ip -= offset;
+                frame->ip -= offset;
+                break;
+            }
+            case OP_CALL:
+            {
+                int argCount = READ_BYTE();
+                if (!CallValue(StackPeek(argCount), argCount))
+                {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
             case OP_RETURN:
             {
-                // Exit!
-                return INTERPRET_OK;
+                Value result = StackPop();
+                vm.frameCount--;
+                if (vm.frameCount == 0)
+                {
+                    StackPop();
+                    return INTERPRET_OK;
+                }
+                
+                vm.sp = frame->slots;
+                StackPush(result);
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
             }
         }
     }
@@ -301,6 +324,94 @@ static InterpretResult Run()
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef BINARY_OP
+}
+
+/**
+ * @brief Calls an Object.
+ * 
+ * @param callee A Value being called.
+ * @param argCount The number of arguments.
+ * @return true If the call was successful.
+ * @return false If the call failed.
+ */
+static bool CallValue(Value callee, int argCount)
+{
+    if (IS_OBJECT(callee))
+    {
+        switch (OBJECT_TYPE(callee))
+        {
+            case OBJECT_FUNCTION:
+                return Call(AS_FUNCTION(callee), argCount);
+            case OBJECT_NATIVE:
+            {
+                NativeFn native = AS_NATIVE(callee);
+                Value result = native(argCount, vm.sp - argCount);
+                vm.sp -= argCount + 1;
+                StackPush(result);
+                return true;
+            }
+            default:
+                break;
+        }
+    }
+    RuntimeError("Can only call functions and classes.");
+    return false;
+}
+
+/**
+ * @brief Calls a function.
+ * 
+ * @param function A function to call.
+ * @param argCount The number of arguments.
+ * @return true The call succeeded.
+ * @return false The call failed.
+ */
+static bool Call(ObjectFunction* function, int argCount)
+{
+    if (argCount != function->arity)
+    {
+        RuntimeError("Expected %d arguments but got %d.", function->arity, argCount);
+        return false;
+    }
+
+    if (vm.frameCount == FRAMES_MAX)
+    {
+        RuntimeError("Stack overflow.");
+        return false;
+    }
+
+    CallFrame* frame = &vm.frames[vm.frameCount++];
+    frame->function = function;
+    frame->ip = function->chunk.code;
+    frame->slots = vm.sp - argCount - 1;
+    return true;
+}
+
+/**
+ * @brief Defines a native function.
+ * 
+ * @param name The name of the function.
+ * @param function The function.
+ */
+static void DefineNative(const char* name, NativeFn function)
+{
+    StackPush(OBJECT_VALUE(CopyString(name, (int)strlen(name))));
+    StackPush(OBJECT_VALUE(NewNative(function)));
+    TableSet(&vm.globals, AS_STRING(vm.stack[0]), vm.stack[1]);
+    StackPop();
+    StackPop();
+}
+
+/**
+ * @brief Handles timing functionality.
+ * 
+ * @param argCount Number of arguments.
+ * @param args Arguments.
+ * @return Value Return value.
+ */
+static Value ClockNative(int argCount, Value* args)
+{
+    return NUMBER_VALUE((double)clock() / CLOCKS_PER_SEC);
 }
 
 /**
@@ -347,8 +458,21 @@ static void RuntimeError(const char* format, ...)
     va_end(args);
     fputs("\n", stderr);
 
-    size_t instruction = vm.ip - vm.chunk->code - 1;
-    int line = vm.chunk->lines[instruction];
-    fprintf(stderr, "[line %d] in script\n", line);
+    for (int i = vm.frameCount - 1; i >= 0; i--)
+    {
+        CallFrame* frame = &vm.frames[i];
+        ObjectFunction* function = frame->function;
+        size_t instruction = frame->ip - function->chunk.code - 1;
+        fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
+        if (function->name == NULL)
+        {
+            fprintf(stderr, "script\n");
+        }
+        else
+        {
+            fprintf(stderr, "%s()\n", function->name->chars);
+        }
+    }
+
     ResetStack();
 }

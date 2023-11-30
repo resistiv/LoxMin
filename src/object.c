@@ -6,6 +6,7 @@
 #include "value.h"
 #include "vm.h"
 
+static void PrintFunction(ObjectFunction* function);
 static Object* AllocateObject(size_t size, ObjectType type);
 static ObjectString* AllocateString(char* chars, int length, uint32_t hash);
 static uint32_t HashString(const char* key, int length);
@@ -15,6 +16,22 @@ static uint32_t HashString(const char* key, int length);
  */
 #define ALLOCATE_OBJECT(type, objectType) \
         (type*)AllocateObject(sizeof(type), objectType)
+
+ObjectFunction* NewFunction()
+{
+    ObjectFunction* function = ALLOCATE_OBJECT(ObjectFunction, OBJECT_FUNCTION);
+    function->arity = 0;
+    function->name = NULL;
+    InitChunk(&function->chunk);
+    return function;
+}
+
+ObjectNative* NewNative(NativeFn function)
+{
+    ObjectNative* native = ALLOCATE_OBJECT(ObjectNative, OBJECT_NATIVE);
+    native->function = function;
+    return native;
+}
 
 ObjectString* TakeString(char* chars, int length)
 {
@@ -53,10 +70,31 @@ void PrintObject(Value value)
 {
     switch(OBJECT_TYPE(value))
     {
+        case OBJECT_FUNCTION:
+            PrintFunction(AS_FUNCTION(value));
+            break;
+        case OBJECT_NATIVE:
+            printf("<native fn>");
+            break;
         case OBJECT_STRING:
             printf("%s", AS_CSTRING(value));
             break;
     }
+}
+
+/**
+ * @brief Prints a function object.
+ * 
+ * @param function An ObjectFunction to print.
+ */
+static void PrintFunction(ObjectFunction* function)
+{
+    if (function->name == NULL)
+    {
+        printf("<script>");
+        return;
+    }
+    printf("<fn %s>", function->name->chars);
 }
 
 /**

@@ -2,20 +2,16 @@
 #define loxmin_object_h
 
 #include "common.h"
+#include "chunk.h"
 #include "value.h"
 
-#define OBJECT_TYPE(value)  (AS_OBJECT(value)->type)
-
-#define IS_STRING(value)    IsObjectType(value, OBJECT_STRING)
-
-#define AS_STRING(value)    ((ObjectString*)AS_OBJECT(value))
-#define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
-
 /**
- * @brief Enumerates all available Obj types.
+ * @brief Enumerates all available Object types.
  */
 typedef enum
 {
+    OBJECT_FUNCTION,
+    OBJECT_NATIVE,
     OBJECT_STRING,
 } ObjectType;
 
@@ -38,6 +34,54 @@ struct ObjectString
     char* chars;
     uint32_t hash;
 };
+
+/**
+ * @brief Represents a function.
+ */
+typedef struct
+{
+    Object obj;
+    int arity;
+    Chunk chunk;
+    ObjectString* name;
+} ObjectFunction;
+
+typedef Value (*NativeFn)(int argCount, Value* args);
+
+/**
+ * @brief Represents a native function.
+ */
+typedef struct
+{
+    Object obj;
+    NativeFn function;
+} ObjectNative;
+
+#define OBJECT_TYPE(value)  (AS_OBJECT(value)->type)
+
+#define IS_FUNCTION(value)  IsObjectType(value, OBJECT_FUNCTION)
+#define IS_NATIVE(value)    IsObjectType(value, OBJECT_NATIVE)
+#define IS_STRING(value)    IsObjectType(value, OBJECT_STRING)
+
+#define AS_FUNCTION(value)  ((ObjectFunction*)AS_OBJECT(value))
+#define AS_NATIVE(value)    (((ObjectNative*)AS_OBJECT(value))->function)
+#define AS_STRING(value)    ((ObjectString*)AS_OBJECT(value))
+#define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
+
+/**
+ * @brief Instantiates a new function.
+ * 
+ * @return ObjectFunction* A pointer to the new ObjectFunction object.
+ */
+ObjectFunction* NewFunction();
+
+/**
+ * @brief Instantiates a new native function.
+ * 
+ * @param function A native function.
+ * @return ObjectNative* A pointer to the new ObjectNative object.
+ */
+ObjectNative* NewNative(NativeFn function);
 
 /**
  * @brief Takes ownership of a given string and allocates it.

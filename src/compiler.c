@@ -64,10 +64,23 @@ typedef struct
 } Local;
 
 /**
+ * @brief Enumerates all function types.
+ */
+typedef enum
+{
+    TYPE_FUNCTION,
+    TYPE_SCRIPT,
+} FunctionType;
+
+/**
  * @brief Stores the state of the compiler.
  */
-typedef struct
+typedef struct Compiler
 {
+    struct Compiler* enclosing;
+    ObjectFunction* function;
+    FunctionType type;
+
     Local locals[UINT8_COUNT];
     int localCount;
     int scopeDepth;
@@ -75,18 +88,23 @@ typedef struct
 
 static void CompileExpression();
 static void CompileDeclaration();
+static void CompileFunctionDeclaration();
 static void CompileVariableDeclaration();
 static void CompileStatement();
 static void CompileExpressionStatement();
 static void CompilePrint();
 static void CompileBlock();
 static void CompileIfStatement();
+static void CompileReturnStatement();
 static void CompileWhileStatement();
 static void CompileForStatement();
+static void CompileFunction(FunctionType type);
 static void CompileNumber(bool canAssign);
 static void CompileGrouping(bool canAssign);
 static void CompileUnary(bool canAssign);
 static void CompileBinary(bool canAssign);
+static void CompileCall(bool canAssign);
+static uint8_t CompileArgumentList();
 static void CompileAnd(bool canAssign);
 static void CompileOr(bool canAssign);
 static void CompileLiteral(bool canAssign);
@@ -101,7 +119,7 @@ static void DeclareVariable();
 static void DefineVariable(uint8_t global);
 static void AddLocalVariable(Token name);
 static int ResolveLocalVariable(Compiler* compiler, Token* name);
-static void MarkLocalInitialized();
+static void MarkInitialized();
 
 static void NextToken();
 static void ConsumeToken(TokenType type, const char* message);
@@ -122,8 +140,8 @@ static uint8_t MakeIdentifierConstant(Token* name);
 static bool AreIdentifiersEqual(Token* a, Token* b);
 
 static Chunk* CurrentChunk();
-static void InitCompiler(Compiler* compiler);
-static void EndCompiler();
+static void InitCompiler(Compiler* compiler, FunctionType type);
+static ObjectFunction* EndCompiler();
 static void BeginScope();
 static void EndScope();
 
@@ -136,7 +154,7 @@ static void ErrorAtCurrent(const char* message);
  */
 ParseRule rules[] =
 {
-    [TOKEN_LEFT_PARENTHESES]    = {CompileGrouping, NULL,          PRECEDENCE_NONE},
+    [TOKEN_LEFT_PARENTHESES]    = {CompileGrouping, CompileCall,   PRECEDENCE_CALL},
     [TOKEN_RIGHT_PARENTHESES]   = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_LEFT_BRACE]          = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RIGHT_BRACE]         = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -180,14 +198,12 @@ ParseRule rules[] =
 
 Parser parser;
 Compiler* current = NULL;
-Chunk* compilingChunk;
 
-bool Compile(const char* source, Chunk* chunk)
+ObjectFunction* Compile(const char* source)
 {
     InitScanner(source);
     Compiler compiler;
-    InitCompiler(&compiler);
-    compilingChunk = chunk;
+    InitCompiler(&compiler, TYPE_SCRIPT);
 
     parser.hadError = false;
     parser.panic = false;
@@ -199,8 +215,8 @@ bool Compile(const char* source, Chunk* chunk)
         CompileDeclaration();
     }
 
-    EndCompiler();
-    return !parser.hadError;
+    ObjectFunction* function = EndCompiler();
+    return parser.hadError ? NULL : function;
 }
 
 /**
@@ -216,7 +232,11 @@ static void CompileExpression()
  */
 static void CompileDeclaration()
 {
-    if (MatchToken(TOKEN_VAR))
+    if (MatchToken(TOKEN_FUN))
+    {
+        CompileFunctionDeclaration();
+    }
+    else if (MatchToken(TOKEN_VAR))
     {
         CompileVariableDeclaration();
     }
@@ -229,6 +249,17 @@ static void CompileDeclaration()
     {
         SynchronizeState();
     }
+}
+
+/**
+ * @brief Compiles a function declaration into the current Chunk.
+ */
+static void CompileFunctionDeclaration()
+{
+    uint8_t global = ParseVariable("Expect function name.");
+    MarkInitialized();
+    CompileFunction(TYPE_FUNCTION);
+    DefineVariable(global);
 }
 
 /**
@@ -267,6 +298,10 @@ static void CompileStatement()
     else if (MatchToken(TOKEN_IF))
     {
         CompileIfStatement();
+    }
+    else if (MatchToken(TOKEN_RETURN))
+    {
+        CompileReturnStatement();
     }
     else if (MatchToken(TOKEN_WHILE))
     {
@@ -337,6 +372,28 @@ static void CompileIfStatement()
         CompileStatement();
     }
     PatchJump(elseJump);
+}
+
+/**
+ * @brief Compiles a return statement.
+ */
+static void CompileReturnStatement()
+{
+    if (current->type == TYPE_SCRIPT)
+    {
+        Error("Can't return from top-level code.");
+    }
+
+    if (MatchToken(TOKEN_SEMICOLON))
+    {
+        EmitReturn();
+    }
+    else
+    {
+        CompileExpression();
+        ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after return value.");
+        EmitByte(OP_RETURN);
+    }
 }
 
 /**
@@ -412,6 +469,40 @@ static void CompileForStatement()
     }
 
     EndScope();
+}
+
+/**
+ * @brief Compiles a function.
+ * 
+ * @param type The type of the function.
+ */
+static void CompileFunction(FunctionType type)
+{
+    Compiler compiler;
+    InitCompiler(&compiler, type);
+    BeginScope();
+
+    ConsumeToken(TOKEN_LEFT_PARENTHESES, "Expect '(' after function name.");
+    if (!CheckToken(TOKEN_RIGHT_PARENTHESES))
+    {
+        do
+        {
+            current->function->arity++;
+            if (current->function->arity > 255)
+            {
+                ErrorAtCurrent("Can't have more than 255 parameters.");
+            }
+            uint8_t constant = ParseVariable("Expect parameter name.");
+            DefineVariable(constant);
+        } while (MatchToken(TOKEN_COMMA));
+    }
+
+    ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after parameters.");
+    ConsumeToken(TOKEN_LEFT_BRACE, "Expect '{' before function body.");
+    CompileBlock();
+
+    ObjectFunction* function = EndCompiler();
+    EmitTwoBytes(OP_CONSTANT, MakeConstant(OBJECT_VALUE(function)));
 }
 
 /**
@@ -502,6 +593,37 @@ static void CompileBinary(bool canAssign)
         default:
             return;
     }
+}
+
+/**
+ * @brief Compiles a function call.
+ */
+static void CompileCall(bool canAssign)
+{
+    uint8_t argCount = CompileArgumentList();
+    EmitTwoBytes(OP_CALL, argCount);
+}
+
+/**
+ * @brief Compiles a call's argument list.
+ */
+static uint8_t CompileArgumentList()
+{
+    uint8_t argCount = 0;
+    if (!CheckToken(TOKEN_RIGHT_PARENTHESES))
+    {
+        do
+        {
+            CompileExpression();
+            if (argCount == 255)
+            {
+                Error("Can't have more than 255 arguments.");
+            }
+            argCount++;
+        } while (MatchToken(TOKEN_COMMA));
+    }
+    ConsumeToken(TOKEN_RIGHT_PARENTHESES, "Expect ')' after arguments.");
+    return argCount;
 }
 
 /**
@@ -704,7 +826,7 @@ static void DefineVariable(uint8_t global)
 {
     if (current->scopeDepth > 0)
     {
-        MarkLocalInitialized();
+        MarkInitialized();
         return;
     }
 
@@ -757,8 +879,12 @@ static int ResolveLocalVariable(Compiler* compiler, Token* name)
 /**
  * @brief Marks the most recent Local as initialized.
  */
-static void MarkLocalInitialized()
+static void MarkInitialized()
 {
+    if (current->scopeDepth == 0)
+    {
+        return;
+    }
     current->locals[current->localCount - 1].depth = current->scopeDepth;
 }
 
@@ -953,6 +1079,7 @@ static void EmitConstant(Value value)
  */
 static void EmitReturn()
 {
+    EmitByte(OP_NIL);
     EmitByte(OP_RETURN);
 }
 
@@ -1012,7 +1139,7 @@ static bool AreIdentifiersEqual(Token* a, Token* b)
  */
 static Chunk* CurrentChunk()
 {
-    return compilingChunk;
+    return &current->function->chunk;
 }
 
 /**
@@ -1020,25 +1147,43 @@ static Chunk* CurrentChunk()
  * 
  * @param compiler A Compiler to initialize.
  */
-static void InitCompiler(Compiler* compiler)
+static void InitCompiler(Compiler* compiler, FunctionType type)
 {
+    compiler->enclosing = current;
+    compiler->function = NULL;
+    compiler->type = type;
     compiler->localCount = 0;
     compiler->scopeDepth = 0;
+    compiler->function = NewFunction();
     current = compiler;
+    if (type != TYPE_SCRIPT)
+    {
+        current->function->name = CopyString(parser.previous.start, parser.previous.length);
+    }
+
+    Local* local = &current->locals[current->localCount++];
+    local->depth = 0;
+    local->name.start = "";
+    local->name.length = 0;
 }
 
 /**
  * @brief Ends the current compilation.
  */
-static void EndCompiler()
+static ObjectFunction* EndCompiler()
 {
     EmitReturn();
+    ObjectFunction* function = current->function;
+
 #ifdef DEBUG_PRINT_CODE
     if (!parser.hadError)
     {
-        DisassembleChunk(CurrentChunk(), "code");
+        DisassembleChunk(CurrentChunk(), function->name != NULL ? function->name->chars : "<script>");
     }
 #endif
+
+    current = current->enclosing;
+    return function;
 }
 
 /**

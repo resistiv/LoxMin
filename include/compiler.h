@@ -5,19 +5,11 @@
 #include "vm.h"
 
 /**
- * @brief Compiles a piece of source code.
- * 
- * @param source A source code string.
- */
-
-/**
- * @brief Compiles a piece of source code to a Chunk.
+ * @brief Compiles a piece of source code to an ObjectFunction.
  * 
  * @param source A source code string to compile.
- * @param chunk A resultant Chunk.
- * @return true If the compilation was successful.
- * @return false If the compilation failed.
+ * @return ObjectFunction* The resultant function.
  */
-bool Compile(const char* source, Chunk* chunk);
+ObjectFunction* Compile(const char* source);
 
 #endif
