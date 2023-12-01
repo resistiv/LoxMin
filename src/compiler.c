@@ -502,7 +502,7 @@ static void CompileFunction(FunctionType type)
     CompileBlock();
 
     ObjectFunction* function = EndCompiler();
-    EmitTwoBytes(OP_CONSTANT, MakeConstant(OBJECT_VALUE(function)));
+    EmitTwoBytes(OP_CLOSURE, MakeConstant(OBJECT_VALUE(function)));
 }
 
 /**

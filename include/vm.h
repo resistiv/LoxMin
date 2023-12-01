@@ -13,7 +13,7 @@
  */
 typedef struct
 {
-    ObjectFunction* function;
+    ObjectClosure* closure;
     uint8_t* ip;
     Value* slots;
 } CallFrame;

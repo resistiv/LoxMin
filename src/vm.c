@@ -12,7 +12,7 @@
 static InterpretResult Run();
 static Value StackPeek(int distance);
 static bool CallValue(Value callee, int argCount);
-static bool Call(ObjectFunction* function, int argCount);
+static bool Call(ObjectClosure* closure, int argCount);
 static void DefineNative(const char* name, NativeFn function);
 static Value ClockNative(int argCount, Value* args);
 static bool IsFalsey(Value value);
@@ -77,7 +77,10 @@ InterpretResult Interpret(const char* source)
     }
 
     StackPush(OBJECT_VALUE(function));
-    Call(function, 0);
+    ObjectClosure* closure = NewClosure(function);
+    StackPop();
+    StackPush(OBJECT_VALUE(closure));
+    Call(closure, 0);
 
     return Run();
 }
@@ -94,7 +97,7 @@ static InterpretResult Run()
 #define READ_BYTE() (*frame->ip++)
 #define READ_SHORT() \
         (frame->ip += 2, (uint16_t)((frame->ip[-2] << 8) | frame->ip[-1]))
-#define READ_CONSTANT() (frame->function->chunk.constants.values[READ_BYTE()])
+#define READ_CONSTANT() (frame->closure->function->chunk.constants.values[READ_BYTE()])
 #define READ_STRING() AS_STRING(READ_CONSTANT())
 #define BINARY_OP(valueType, op) \
         do \
@@ -124,7 +127,7 @@ static InterpretResult Run()
         printf("\n");
 
         // Disassemble and print current instruction
-        DisassembleInstruction(&frame->function->chunk, (int)(frame->ip - frame->function->chunk.code));
+        DisassembleInstruction(&frame->closure->function->chunk, (int)(frame->ip - frame->closure->function->chunk.code));
 #endif
 
         uint8_t instruction = READ_BYTE();
@@ -301,6 +304,13 @@ static InterpretResult Run()
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
+            case OP_CLOSURE:
+            {
+                ObjectFunction* function = AS_FUNCTION(READ_CONSTANT());
+                ObjectClosure* closure = NewClosure(function);
+                StackPush(OBJECT_VALUE(closure));
+                break;
+            }
             case OP_RETURN:
             {
                 Value result = StackPop();
@@ -340,8 +350,8 @@ static bool CallValue(Value callee, int argCount)
     {
         switch (OBJECT_TYPE(callee))
         {
-            case OBJECT_FUNCTION:
-                return Call(AS_FUNCTION(callee), argCount);
+            case OBJECT_CLOSURE:
+                return Call(AS_CLOSURE(callee), argCount);
             case OBJECT_NATIVE:
             {
                 NativeFn native = AS_NATIVE(callee);
@@ -361,16 +371,16 @@ static bool CallValue(Value callee, int argCount)
 /**
  * @brief Calls a function.
  * 
- * @param function A function to call.
+ * @param closure A function closure to call.
  * @param argCount The number of arguments.
  * @return true The call succeeded.
  * @return false The call failed.
  */
-static bool Call(ObjectFunction* function, int argCount)
+static bool Call(ObjectClosure* closure, int argCount)
 {
-    if (argCount != function->arity)
+    if (argCount != closure->function->arity)
     {
-        RuntimeError("Expected %d arguments but got %d.", function->arity, argCount);
+        RuntimeError("Expected %d arguments but got %d.", closure->function->arity, argCount);
         return false;
     }
 
@@ -381,8 +391,8 @@ static bool Call(ObjectFunction* function, int argCount)
     }
 
     CallFrame* frame = &vm.frames[vm.frameCount++];
-    frame->function = function;
-    frame->ip = function->chunk.code;
+    frame->closure = closure;
+    frame->ip = closure->function->chunk.code;
     frame->slots = vm.sp - argCount - 1;
     return true;
 }
@@ -461,7 +471,7 @@ static void RuntimeError(const char* format, ...)
     for (int i = vm.frameCount - 1; i >= 0; i--)
     {
         CallFrame* frame = &vm.frames[i];
-        ObjectFunction* function = frame->function;
+        ObjectFunction* function = frame->closure->function;
         size_t instruction = frame->ip - function->chunk.code - 1;
         fprintf(stderr, "[line %d] in ", function->chunk.lines[instruction]);
         if (function->name == NULL)

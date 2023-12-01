@@ -81,6 +81,15 @@ int DisassembleInstruction(Chunk* chunk, int offset)
             return JumpInstruction("OP_LOOP", -1, chunk, offset);
         case OP_CALL:
             return ByteInstruction("OP_CALL", chunk, offset);
+        case OP_CLOSURE:
+        {
+            offset++;
+            uint8_t constant = chunk->code[offset++];
+            printf("%-16s %4d ", "OP_CLOSURE", constant);
+            PrintValue(chunk->constants.values[constant]);
+            printf("\n");
+            return offset;
+        }
         case OP_RETURN:
             return SimpleInstruction("OP_RETURN", offset);
         default:

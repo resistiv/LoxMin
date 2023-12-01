@@ -10,6 +10,7 @@
  */
 typedef enum
 {
+    OBJECT_CLOSURE,
     OBJECT_FUNCTION,
     OBJECT_NATIVE,
     OBJECT_STRING,
@@ -46,6 +47,15 @@ typedef struct
     ObjectString* name;
 } ObjectFunction;
 
+/**
+ * @brief Represents a closure.
+ */
+typedef struct 
+{
+    Object obj;
+    ObjectFunction* function;
+} ObjectClosure;
+
 typedef Value (*NativeFn)(int argCount, Value* args);
 
 /**
@@ -59,14 +69,24 @@ typedef struct
 
 #define OBJECT_TYPE(value)  (AS_OBJECT(value)->type)
 
+#define IS_CLOSURE(value)   IsObjectType(value, OBJECT_CLOSURE);
 #define IS_FUNCTION(value)  IsObjectType(value, OBJECT_FUNCTION)
 #define IS_NATIVE(value)    IsObjectType(value, OBJECT_NATIVE)
 #define IS_STRING(value)    IsObjectType(value, OBJECT_STRING)
 
+#define AS_CLOSURE(value)   ((ObjectClosure*)AS_OBJECT(value))
 #define AS_FUNCTION(value)  ((ObjectFunction*)AS_OBJECT(value))
 #define AS_NATIVE(value)    (((ObjectNative*)AS_OBJECT(value))->function)
 #define AS_STRING(value)    ((ObjectString*)AS_OBJECT(value))
 #define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
+
+/**
+ * @brief 
+ * 
+ * @param function 
+ * @return ObjectClosure* 
+ */
+ObjectClosure* NewClosure(ObjectFunction* function);
 
 /**
  * @brief Instantiates a new function.

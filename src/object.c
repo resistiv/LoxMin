@@ -17,6 +17,13 @@ static uint32_t HashString(const char* key, int length);
 #define ALLOCATE_OBJECT(type, objectType) \
         (type*)AllocateObject(sizeof(type), objectType)
 
+ObjectClosure* NewClosure(ObjectFunction* function)
+{
+    ObjectClosure* closure = ALLOCATE_OBJECT(ObjectClosure, OBJECT_CLOSURE);
+    closure->function = function;
+    return closure;
+}
+
 ObjectFunction* NewFunction()
 {
     ObjectFunction* function = ALLOCATE_OBJECT(ObjectFunction, OBJECT_FUNCTION);
@@ -70,6 +77,9 @@ void PrintObject(Value value)
 {
     switch(OBJECT_TYPE(value))
     {
+        case OBJECT_CLOSURE:
+            PrintFunction(AS_CLOSURE(value)->function);
+            break;
         case OBJECT_FUNCTION:
             PrintFunction(AS_FUNCTION(value));
             break;
