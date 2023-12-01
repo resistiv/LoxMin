@@ -17,10 +17,27 @@ static uint32_t HashString(const char* key, int length);
 #define ALLOCATE_OBJECT(type, objectType) \
         (type*)AllocateObject(sizeof(type), objectType)
 
+ObjectUpvalue* NewUpvalue(Value* slot)
+{
+    ObjectUpvalue* upvalue = ALLOCATE_OBJECT(ObjectUpvalue, OBJECT_UPVALUE);
+    upvalue->closed = NIL_VALUE;
+    upvalue->location = slot;
+    upvalue->next = NULL;
+    return upvalue;
+}
+
 ObjectClosure* NewClosure(ObjectFunction* function)
 {
+    ObjectUpvalue** upvalues = ALLOCATE(ObjectUpvalue*, function->upvalueCount);
+    for (int i = 0; i < function->upvalueCount; i++)
+    {
+        upvalues[i] = NULL;
+    }
+
     ObjectClosure* closure = ALLOCATE_OBJECT(ObjectClosure, OBJECT_CLOSURE);
     closure->function = function;
+    closure->upvalues = upvalues;
+    closure->upvalueCount = function->upvalueCount;
     return closure;
 }
 
@@ -28,6 +45,7 @@ ObjectFunction* NewFunction()
 {
     ObjectFunction* function = ALLOCATE_OBJECT(ObjectFunction, OBJECT_FUNCTION);
     function->arity = 0;
+    function->upvalueCount = 0;
     function->name = NULL;
     InitChunk(&function->chunk);
     return function;
@@ -77,6 +95,9 @@ void PrintObject(Value value)
 {
     switch(OBJECT_TYPE(value))
     {
+        case OBJECT_UPVALUE:
+            printf("upvalue");
+            break;
         case OBJECT_CLOSURE:
             PrintFunction(AS_CLOSURE(value)->function);
             break;

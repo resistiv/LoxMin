@@ -11,6 +11,8 @@
 
 static InterpretResult Run();
 static Value StackPeek(int distance);
+static ObjectUpvalue* CaptureUpvalue(Value* local);
+static void CloseUpvalues(Value* last);
 static bool CallValue(Value callee, int argCount);
 static bool Call(ObjectClosure* closure, int argCount);
 static void DefineNative(const char* name, NativeFn function);
@@ -28,6 +30,7 @@ static void ResetStack()
 {
     vm.sp = vm.stack;
     vm.frameCount = 0;
+    vm.openUpvalues = NULL;
 }
 
 void InitVM()
@@ -201,6 +204,18 @@ static InterpretResult Run()
                 }
                 break;
             }
+            case OP_GET_UPVALUE:
+            {
+                uint8_t slot = READ_BYTE();
+                StackPush(*frame->closure->upvalues[slot]->location);
+                break;
+            }
+            case OP_SET_UPVALUE:
+            {
+                uint8_t slot = READ_BYTE();
+                *frame->closure->upvalues[slot]->location = StackPeek(0);
+                break;
+            }
             case OP_EQUAL:
             {
                 Value b = StackPop();
@@ -309,11 +324,31 @@ static InterpretResult Run()
                 ObjectFunction* function = AS_FUNCTION(READ_CONSTANT());
                 ObjectClosure* closure = NewClosure(function);
                 StackPush(OBJECT_VALUE(closure));
+                for (int i = 0; i < closure->upvalueCount; i++)
+                {
+                    uint8_t isLocal = READ_BYTE();
+                    uint8_t index = READ_BYTE();
+                    if (isLocal)
+                    {
+                        closure->upvalues[i] = CaptureUpvalue(frame->slots + index);
+                    }
+                    else
+                    {
+                        closure->upvalues[i] = frame->closure->upvalues[index];
+                    }
+                }
+                break;
+            }
+            case OP_CLOSE_UPVALUE:
+            {
+                CloseUpvalues(vm.sp - 1);
+                StackPop();
                 break;
             }
             case OP_RETURN:
             {
                 Value result = StackPop();
+                CloseUpvalues(frame->slots);
                 vm.frameCount--;
                 if (vm.frameCount == 0)
                 {
@@ -334,6 +369,59 @@ static InterpretResult Run()
 #undef READ_CONSTANT
 #undef READ_STRING
 #undef BINARY_OP
+}
+
+/**
+ * @brief Captures a local Value as an upvalue.
+ * 
+ * @param local A local to capture.
+ * @return ObjectUpvalue* A resulting upvalue object.
+ */
+static ObjectUpvalue* CaptureUpvalue(Value* local)
+{
+    // Look for existing upvalue, don't duplicate!
+    ObjectUpvalue* prevUpvalue = NULL;
+    ObjectUpvalue* upvalue = vm.openUpvalues;
+    while (upvalue != NULL && upvalue->location > local)
+    {
+        prevUpvalue = upvalue;
+        upvalue = upvalue->next;
+    }
+
+    if (upvalue != NULL && upvalue->location == local)
+    {
+        return upvalue;
+    }
+
+    ObjectUpvalue* newUpvalue = NewUpvalue(local);
+    newUpvalue->next = upvalue;
+
+    if (prevUpvalue == NULL)
+    {
+        vm.openUpvalues = newUpvalue;
+    }
+    else
+    {
+        prevUpvalue->next = newUpvalue;
+    }
+
+    return newUpvalue;
+}
+
+/**
+ * @brief Closes upvalues and moves them to the heap.
+ * 
+ * @param last The last upvalue slot to close.
+ */
+static void CloseUpvalues(Value* last)
+{
+    while (vm.openUpvalues != NULL && vm.openUpvalues->location >= last)
+    {
+        ObjectUpvalue* upvalue = vm.openUpvalues;
+        upvalue->closed = *upvalue->location;
+        upvalue->location = &upvalue->closed;
+        vm.openUpvalues = upvalue->next;
+    }
 }
 
 /**

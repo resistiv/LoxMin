@@ -61,7 +61,17 @@ typedef struct
 {
     Token name;
     int depth;
+    bool isCaptured;
 } Local;
+
+/**
+ * @brief Stores information about an upvalue.
+ */
+typedef struct 
+{
+    uint8_t index;
+    bool isLocal;
+} Upvalue;
 
 /**
  * @brief Enumerates all function types.
@@ -83,6 +93,7 @@ typedef struct Compiler
 
     Local locals[UINT8_COUNT];
     int localCount;
+    Upvalue upvalues[UINT8_COUNT];
     int scopeDepth;
 } Compiler;
 
@@ -119,6 +130,8 @@ static void DeclareVariable();
 static void DefineVariable(uint8_t global);
 static void AddLocalVariable(Token name);
 static int ResolveLocalVariable(Compiler* compiler, Token* name);
+static int AddUpvalue(Compiler* compiler, uint8_t index, bool isLocal);
+static int ResolveUpvalue(Compiler* compiler, Token* name);
 static void MarkInitialized();
 
 static void NextToken();
@@ -503,6 +516,11 @@ static void CompileFunction(FunctionType type)
 
     ObjectFunction* function = EndCompiler();
     EmitTwoBytes(OP_CLOSURE, MakeConstant(OBJECT_VALUE(function)));
+
+    for (int i = 0; i < function->upvalueCount; i++)
+    {
+        EmitTwoBytes(compiler.upvalues[i].isLocal ? 1 : 0, compiler.upvalues[i].index);
+    }
 }
 
 /**
@@ -707,6 +725,11 @@ static void CompileNamedVariable(Token name, bool canAssign)
         getOp = OP_GET_LOCAL;
         setOp = OP_SET_LOCAL;
     }
+    else if ((arg = ResolveUpvalue(current, &name)) != -1)
+    {
+        getOp = OP_GET_UPVALUE;
+        setOp = OP_SET_UPVALUE;
+    }
     else
     {
         arg = MakeIdentifierConstant(&name);
@@ -849,6 +872,7 @@ static void AddLocalVariable(Token name)
     Local* local = &current->locals[current->localCount++];
     local->name = name;
     local->depth = -1;
+    local->isCaptured = false;
 }
 
 /**
@@ -871,6 +895,71 @@ static int ResolveLocalVariable(Compiler* compiler, Token* name)
             }
             return i;
         }
+    }
+
+    return -1;
+}
+
+/**
+ * @brief Attempts to add an upvalue to the current compiler Upvalue list.
+ * 
+ * @param compiler A Compiler to add an Upvalue to.
+ * @param index The index of the upvalue.
+ * @param isLocal Whether or not the upvalue is a local.
+ * @return int The upvalue's index in the Upvalue list.
+ */
+static int AddUpvalue(Compiler* compiler, uint8_t index, bool isLocal)
+{
+    int upvalueCount = compiler->function->upvalueCount;
+
+    for (int i = 0; i < upvalueCount; i++)
+    {
+        Upvalue* upvalue = &compiler->upvalues[i];
+        if (upvalue->index == index && upvalue->isLocal == isLocal)
+        {
+            return i;
+        }
+    }
+
+    if (upvalueCount == UINT8_COUNT)
+    {
+        Error("Too many closure variables in function.");
+        return 0;
+    }
+
+    compiler->upvalues[upvalueCount].isLocal = isLocal;
+    compiler->upvalues[upvalueCount].index = index;
+    return compiler->function->upvalueCount++;
+}
+
+/**
+ * @brief Attempts to resolve an upvalue (closure variable).
+ * 
+ * @param compiler A Compiler to use to resolve the variable.
+ * @param name The name Token of the upvalue.
+ * @return int The index of the upvalue, if found.
+ */
+static int ResolveUpvalue(Compiler* compiler, Token* name)
+{
+    // No enclosing, reached globals so nothing to do
+    if (compiler->enclosing == NULL)
+    {
+        return -1;
+    }
+
+    // First, search in the local scope
+    int local = ResolveLocalVariable(compiler->enclosing, name);
+    if (local != -1)
+    {
+        compiler->enclosing->locals[local].isCaptured = true;
+        return AddUpvalue(compiler, (uint8_t)local, true);
+    }
+
+    // If not local, traverse up to enclosing scope
+    int upvalue = ResolveUpvalue(compiler->enclosing, name);
+    if (upvalue != -1)
+    {
+        return AddUpvalue(compiler, (uint8_t)upvalue, false);
     }
 
     return -1;
@@ -1163,6 +1252,7 @@ static void InitCompiler(Compiler* compiler, FunctionType type)
 
     Local* local = &current->locals[current->localCount++];
     local->depth = 0;
+    local->isCaptured = false;
     local->name.start = "";
     local->name.length = 0;
 }
@@ -1204,7 +1294,14 @@ static void EndScope()
     // Pop all locals off stack
     while (current->localCount > 0 && current->locals[current->localCount - 1].depth > current->scopeDepth)
     {
-        EmitByte(OP_POP);
+        if (current->locals[current->localCount - 1].isCaptured)
+        {
+            EmitByte(OP_CLOSE_UPVALUE);
+        }
+        else
+        {
+            EmitByte(OP_POP);
+        }
         current->localCount--;
     }
 }

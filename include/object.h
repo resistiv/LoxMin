@@ -10,6 +10,7 @@
  */
 typedef enum
 {
+    OBJECT_UPVALUE,
     OBJECT_CLOSURE,
     OBJECT_FUNCTION,
     OBJECT_NATIVE,
@@ -43,9 +44,21 @@ typedef struct
 {
     Object obj;
     int arity;
+    int upvalueCount;
     Chunk chunk;
     ObjectString* name;
 } ObjectFunction;
+
+/**
+ * @brief Represents an upvalue.
+ */
+typedef struct ObjectUpvalue
+{
+    Object obj;
+    Value* location;
+    Value closed;
+    struct ObjectUpvalue* next;
+} ObjectUpvalue;
 
 /**
  * @brief Represents a closure.
@@ -54,6 +67,8 @@ typedef struct
 {
     Object obj;
     ObjectFunction* function;
+    ObjectUpvalue** upvalues;
+    int upvalueCount;
 } ObjectClosure;
 
 typedef Value (*NativeFn)(int argCount, Value* args);
@@ -81,10 +96,18 @@ typedef struct
 #define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
 
 /**
- * @brief 
+ * @brief Instantiates a new upvalue.
  * 
- * @param function 
- * @return ObjectClosure* 
+ * @param slot The slot of the upvalue.
+ * @return ObjectUpvalue* A pointer to the new ObjectUpvalue object.
+ */
+ObjectUpvalue* NewUpvalue(Value* slot);
+
+/**
+ * @brief Instantiates a new closure.
+ * 
+ * @param function A function to close around.
+ * @return ObjectClosure* A pointer to the new ObjectClosure object.
  */
 ObjectClosure* NewClosure(ObjectFunction* function);
 

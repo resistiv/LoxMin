@@ -45,8 +45,15 @@ static void FreeObject(Object* object)
 {
     switch (object->type)
     {
+        case OBJECT_UPVALUE:
+        {
+            FREE(ObjectUpvalue, object);
+            break;
+        }
         case OBJECT_CLOSURE:
         {
+            ObjectClosure* closure = (ObjectClosure*)object;
+            FREE_ARRAY(ObjectUpvalue*, closure->upvalues, closure->upvalueCount);
             FREE(ObjectClosure, object);
             break;
         }
