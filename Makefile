@@ -1,5 +1,5 @@
 CC       = gcc
-CFLAGS   = -Wall -Wextra -I$(INCLUDEDIR)
+CFLAGS   = -Wall -I$(INCLUDEDIR)
 
 INCLUDEDIR = include
 SOURCEDIR  = src
