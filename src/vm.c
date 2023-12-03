@@ -223,6 +223,43 @@ static InterpretResult Run()
                 *frame->closure->upvalues[slot]->location = StackPeek(0);
                 break;
             }
+            case OP_GET_PROPERTY:
+            {
+                if (!IS_INSTANCE(StackPeek(0)))
+                {
+                    RuntimeError("Only instances have properties.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjectInstance* instance = AS_INSTANCE(StackPeek(0));
+                ObjectString* name = READ_STRING();
+
+                Value value;
+                if (TableGet(&instance->fields, name, &value))
+                {
+                    StackPop();
+                    StackPush(value);
+                    break;
+                }
+
+                RuntimeError("Undefined property '%s'.", name->chars);
+                return INTERPRET_RUNTIME_ERROR;
+            }
+            case OP_SET_PROPERTY:
+            {
+                if (!IS_INSTANCE(StackPeek(1)))
+                {
+                    RuntimeError("Only instances have fields.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjectInstance* instance = AS_INSTANCE(StackPeek(1));
+                TableSet(&instance->fields, READ_STRING(), StackPeek(0));
+                Value value = StackPop();
+                StackPop();
+                StackPush(value);
+                break;
+            }
             case OP_EQUAL:
             {
                 Value b = StackPop();
@@ -368,6 +405,11 @@ static InterpretResult Run()
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
+            case OP_CLASS:
+            {
+                StackPush(OBJECT_VALUE(NewClass(READ_STRING())));
+                break;
+            }
         }
     }
 
@@ -445,6 +487,12 @@ static bool CallValue(Value callee, int argCount)
     {
         switch (OBJECT_TYPE(callee))
         {
+            case OBJECT_CLASS:
+            {
+                ObjectClass* _class = AS_CLASS(callee);
+                vm.sp[-argCount - 1] = OBJECT_VALUE(NewInstance(_class));
+                return true;
+            }
             case OBJECT_CLOSURE:
                 return Call(AS_CLOSURE(callee), argCount);
             case OBJECT_NATIVE:

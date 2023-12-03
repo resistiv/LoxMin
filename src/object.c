@@ -17,6 +17,21 @@ static uint32_t HashString(const char* key, int length);
 #define ALLOCATE_OBJECT(type, objectType) \
         (type*)AllocateObject(sizeof(type), objectType)
 
+ObjectInstance* NewInstance(ObjectClass* _class)
+{
+    ObjectInstance* instance = ALLOCATE_OBJECT(ObjectInstance, OBJECT_INSTANCE);
+    instance->_class = _class;
+    InitTable(&instance->fields);
+    return instance;
+}
+
+ObjectClass* NewClass(ObjectString* name)
+{
+    ObjectClass* _class = ALLOCATE_OBJECT(ObjectClass, OBJECT_CLASS);
+    _class->name = name;
+    return _class;
+}
+
 ObjectUpvalue* NewUpvalue(Value* slot)
 {
     ObjectUpvalue* upvalue = ALLOCATE_OBJECT(ObjectUpvalue, OBJECT_UPVALUE);
@@ -95,6 +110,12 @@ void PrintObject(Value value)
 {
     switch(OBJECT_TYPE(value))
     {
+        case OBJECT_CLASS:
+            printf("%s", AS_CLASS(value)->name->chars);
+            break;
+        case OBJECT_INSTANCE:
+            printf("%s instance", AS_INSTANCE(value)->_class->name->chars);
+            break;
         case OBJECT_UPVALUE:
             printf("upvalue");
             break;

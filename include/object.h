@@ -3,6 +3,7 @@
 
 #include "common.h"
 #include "chunk.h"
+#include "table.h"
 #include "value.h"
 
 /**
@@ -10,6 +11,8 @@
  */
 typedef enum
 {
+    OBJECT_CLASS,
+    OBJECT_INSTANCE,
     OBJECT_UPVALUE,
     OBJECT_CLOSURE,
     OBJECT_FUNCTION,
@@ -83,18 +86,57 @@ typedef struct
     NativeFn function;
 } ObjectNative;
 
+/**
+ * @brief Represents a class.
+ */
+typedef struct
+{
+    Object obj;
+    ObjectString* name;
+} ObjectClass;
+
+/**
+ * @brief Represents an instance.
+ */
+typedef struct
+{
+    Object obj;
+    ObjectClass* _class;
+    Table fields;
+} ObjectInstance;
+
 #define OBJECT_TYPE(value)  (AS_OBJECT(value)->type)
 
-#define IS_CLOSURE(value)   IsObjectType(value, OBJECT_CLOSURE);
+#define IS_CLASS(value)     IsObjectType(value, OBJECT_CLASS)
+#define IS_CLOSURE(value)   IsObjectType(value, OBJECT_CLOSURE)
 #define IS_FUNCTION(value)  IsObjectType(value, OBJECT_FUNCTION)
+#define IS_INSTANCE(value)  IsObjectType(value, OBJECT_INSTANCE)
 #define IS_NATIVE(value)    IsObjectType(value, OBJECT_NATIVE)
 #define IS_STRING(value)    IsObjectType(value, OBJECT_STRING)
 
+#define AS_CLASS(value)     ((ObjectClass*)AS_OBJECT(value))
 #define AS_CLOSURE(value)   ((ObjectClosure*)AS_OBJECT(value))
 #define AS_FUNCTION(value)  ((ObjectFunction*)AS_OBJECT(value))
+#define AS_INSTANCE(value)  ((ObjectInstance*)AS_OBJECT(value))
 #define AS_NATIVE(value)    (((ObjectNative*)AS_OBJECT(value))->function)
 #define AS_STRING(value)    ((ObjectString*)AS_OBJECT(value))
 #define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
+
+/**
+ * @brief Instantiates a new class instance.
+ * 
+ * @param _class An ObjectClass to produce an instance of.
+ * @return ObjectInstance* A pointer to the new ObjectInstance object.
+ */
+ObjectInstance* NewInstance(ObjectClass* _class);
+
+/**
+ * @brief Instantiates a new class.
+ * 
+ * @param name The name of the class.
+ * @return ObjectClass* A pointer to the new ObjectClass object.
+ */
+ObjectClass* NewClass(ObjectString* name);
 
 /**
  * @brief Instantiates a new upvalue.

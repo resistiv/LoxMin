@@ -100,6 +100,7 @@ typedef struct Compiler
 
 static void CompileExpression();
 static void CompileDeclaration();
+static void CompileClassDeclaration();
 static void CompileFunctionDeclaration();
 static void CompileVariableDeclaration();
 static void CompileStatement();
@@ -123,6 +124,7 @@ static void CompileLiteral(bool canAssign);
 static void CompileString(bool canAssign);
 static void CompileVariable(bool canAssign);
 static void CompileNamedVariable(Token name, bool canAssign);
+static void CompileDot(bool canAssign);
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
@@ -173,7 +175,7 @@ ParseRule rules[] =
     [TOKEN_LEFT_BRACE]          = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RIGHT_BRACE]         = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_COMMA]               = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_DOT]                 = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_DOT]                 = {NULL,            CompileDot,    PRECEDENCE_CALL},
     [TOKEN_MINUS]               = {CompileUnary,    CompileBinary, PRECEDENCE_TERM},
     [TOKEN_PLUS]                = {NULL,            CompileBinary, PRECEDENCE_TERM},
     [TOKEN_SEMICOLON]           = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -256,7 +258,11 @@ static void CompileExpression()
  */
 static void CompileDeclaration()
 {
-    if (MatchToken(TOKEN_FUN))
+    if (MatchToken(TOKEN_CLASS))
+    {
+        CompileClassDeclaration();
+    }
+    else if (MatchToken(TOKEN_FUN))
     {
         CompileFunctionDeclaration();
     }
@@ -273,6 +279,22 @@ static void CompileDeclaration()
     {
         SynchronizeState();
     }
+}
+
+/**
+ * @brief Compiles a class declaration into the current Chunk.
+ */
+static void CompileClassDeclaration()
+{
+    ConsumeToken(TOKEN_IDENTIFIER, "Expect class name.");
+    uint8_t nameConstant = MakeIdentifierConstant(&parser.previous);
+    DeclareVariable();
+
+    EmitTwoBytes(OP_CLASS, nameConstant);
+    DefineVariable(nameConstant);
+
+    ConsumeToken(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
+    ConsumeToken(TOKEN_RIGHT_BRACE, "Expect '}' after class body.");
 }
 
 /**
@@ -759,6 +781,25 @@ static void CompileNamedVariable(Token name, bool canAssign)
     else
     {
         EmitTwoBytes(getOp, (uint8_t)arg);
+    }
+}
+
+/**
+ * @brief Compiles a dot field accessor.
+ */
+static void CompileDot(bool canAssign)
+{
+    ConsumeToken(TOKEN_IDENTIFIER, "Expect property name after '.'.");
+    uint8_t name = MakeIdentifierConstant(&parser.previous);
+
+    if (canAssign && MatchToken(TOKEN_EQUAL))
+    {
+        CompileExpression();
+        EmitTwoBytes(OP_SET_PROPERTY, name);
+    }
+    else
+    {
+        EmitTwoBytes(OP_GET_PROPERTY, name);
     }
 }
 

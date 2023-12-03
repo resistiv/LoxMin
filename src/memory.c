@@ -176,6 +176,18 @@ static void FreeObject(Object* object)
 
     switch (object->type)
     {
+        case OBJECT_CLASS:
+        {
+            FREE(ObjectClass, object);
+            break;
+        }
+        case OBJECT_INSTANCE:
+        {
+            ObjectInstance* instance = (ObjectInstance*)object;
+            FreeTable(&instance->fields);
+            FREE(ObjectInstance, object);
+            break;
+        }
         case OBJECT_UPVALUE:
         {
             FREE(ObjectUpvalue, object);
@@ -235,6 +247,19 @@ static void BlackenObject(Object* object)
 
     switch (object->type)
     {
+        case OBJECT_CLASS:
+        {
+            ObjectClass* _class = (ObjectClass*)object;
+            MarkObject((Object*)_class->name);
+            break;
+        }
+        case OBJECT_INSTANCE:
+        {
+            ObjectInstance* instance = (ObjectInstance*)object;
+            MarkObject((Object*)instance->_class);
+            MarkTable(&instance->fields);
+            break;
+        }
         case OBJECT_CLOSURE:
         {
             ObjectClosure* closure = (ObjectClosure*)object;
