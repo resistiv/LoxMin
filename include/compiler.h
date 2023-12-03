@@ -12,4 +12,9 @@
  */
 ObjectFunction* Compile(const char* source);
 
+/**
+ * @brief Marks all compiler roots for garbage collection.
+ */
+void MarkCompilerRoots();
+
 #endif

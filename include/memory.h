@@ -46,6 +46,25 @@
 void* Reallocate(void* pointer, size_t oldSize, size_t newSize);
 
 /**
+ * @brief Reclaims freeable and unused memory.
+ */
+void CollectGarbage();
+
+/**
+ * @brief Marks a value as accessible.
+ * 
+ * @param value A Value to mark.
+ */
+void MarkValue(Value value);
+
+/**
+ * @brief Marks an object as accessible.
+ * 
+ * @param object An Object to mark.
+ */
+void MarkObject(Object* object);
+
+/**
  * @brief Frees all heap-stored objects.
  */
 void FreeObjects();

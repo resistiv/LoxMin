@@ -88,4 +88,18 @@ void TableCopy(Table* from, Table* to);
  */
 ObjectString* TableFindString(Table* table, const char* chars, int length, uint32_t hash);
 
+/**
+ * @brief Marks table items as accessible.
+ * 
+ * @param table A Table to mark.
+ */
+void MarkTable(Table* table);
+
+/**
+ * @brief Removes all white values from a table.
+ * 
+ * @param table A Table to purge white Values from.
+ */
+void TableRemoveWhite(Table* table);
+
 #endif

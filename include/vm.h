@@ -32,7 +32,13 @@ typedef struct
     Table globals;
     Table strings;
     ObjectUpvalue* openUpvalues;
+
+    size_t bytesAllocated;
+    size_t nextGC;
     Object* objects;
+    int grayCount;
+    int grayCapacity;
+    Object** grayStack;
 } VM;
 
 extern VM vm;

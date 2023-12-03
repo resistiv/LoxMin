@@ -140,8 +140,13 @@ static Object* AllocateObject(size_t size, ObjectType type)
     Object* object = (Object*)Reallocate(NULL, 0, size);
 
     object->type = type;
+    object->isMarked = false;
     object->next = vm.objects;
     vm.objects = object;
+
+#ifdef DEBUG_LOG_GC
+    printf("%p allocate %zu for %d\n", (void*)object, size, type);
+#endif
 
     return object;
 }
@@ -160,7 +165,10 @@ static ObjectString* AllocateString(char* chars, int length, uint32_t hash)
     string->length = length;
     string->chars = chars;
     string->hash = hash;
+
+    StackPush(OBJECT_VALUE(string));
     TableSet(&vm.strings, string, NIL_VALUE);
+    StackPop();
 
     return string;
 }

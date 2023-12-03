@@ -3,6 +3,7 @@
 #include <string.h>
 #include "common.h"
 #include "compiler.h"
+#include "memory.h"
 #include "scanner.h"
 
 #ifdef DEBUG_PRINT_CODE
@@ -232,6 +233,16 @@ ObjectFunction* Compile(const char* source)
     return parser.hadError ? NULL : function;
 }
 
+void MarkCompilerRoots()
+{
+    Compiler* compiler = current;
+    while (compiler != NULL)
+    {
+        MarkObject((Object*)compiler->function);
+        compiler = compiler->enclosing;
+    }
+}
+
 /**
  * @brief Compiles an expression into the current Chunk.
  */
@@ -332,6 +343,9 @@ static void CompileStatement()
     }
 }
 
+/**
+ * @brief Compiles an expression into the current Chunk.
+ */
 static void CompileExpressionStatement()
 {
     CompileExpression();
