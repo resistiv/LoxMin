@@ -642,6 +642,14 @@ static bool Invoke(ObjectString* name, int argCount)
     }
 
     ObjectInstance* instance = AS_INSTANCE(receiver);
+
+    Value value;
+    if (TableGet(&instance->fields, name, &value))
+    {
+        vm.sp[-argCount - 1] = value;
+        return CallValue(value, argCount);
+    }
+
     return InvokeFromClass(instance->_class, name, argCount);
 }
 
