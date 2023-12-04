@@ -29,6 +29,7 @@ ObjectClass* NewClass(ObjectString* name)
 {
     ObjectClass* _class = ALLOCATE_OBJECT(ObjectClass, OBJECT_CLASS);
     _class->name = name;
+    InitTable(&_class->methods);
     return _class;
 }
 

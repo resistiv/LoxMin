@@ -93,6 +93,7 @@ typedef struct
 {
     Object obj;
     ObjectString* name;
+    Table methods;
 } ObjectClass;
 
 /**

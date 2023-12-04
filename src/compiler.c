@@ -112,6 +112,7 @@ static void CompileReturnStatement();
 static void CompileWhileStatement();
 static void CompileForStatement();
 static void CompileFunction(FunctionType type);
+static void CompileMethod();
 static void CompileNumber(bool canAssign);
 static void CompileGrouping(bool canAssign);
 static void CompileUnary(bool canAssign);
@@ -287,14 +288,21 @@ static void CompileDeclaration()
 static void CompileClassDeclaration()
 {
     ConsumeToken(TOKEN_IDENTIFIER, "Expect class name.");
+    Token className = parser.previous;
     uint8_t nameConstant = MakeIdentifierConstant(&parser.previous);
     DeclareVariable();
 
+    CompileNamedVariable(className, false);
     EmitTwoBytes(OP_CLASS, nameConstant);
     DefineVariable(nameConstant);
 
     ConsumeToken(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
+    while (!CheckToken(TOKEN_RIGHT_BRACE) && !CheckToken(TOKEN_EOF))
+    {
+        CompileMethod();
+    }
     ConsumeToken(TOKEN_RIGHT_BRACE, "Expect '}' after class body.");
+    EmitByte(OP_POP);
 }
 
 /**
@@ -557,6 +565,19 @@ static void CompileFunction(FunctionType type)
     {
         EmitTwoBytes(compiler.upvalues[i].isLocal ? 1 : 0, compiler.upvalues[i].index);
     }
+}
+
+/**
+ * @brief Compiles a method into the current Chunk.
+ */
+static void CompileMethod()
+{
+    ConsumeToken(TOKEN_IDENTIFIER, "Expect method name.");
+    uint8_t constant = MakeIdentifierConstant(&parser.previous);
+
+    FunctionType type = TYPE_FUNCTION;
+    CompileFunction(type);
+    EmitTwoBytes(OP_METHOD, constant);
 }
 
 /**
