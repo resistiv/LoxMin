@@ -17,6 +17,15 @@ static uint32_t HashString(const char* key, int length);
 #define ALLOCATE_OBJECT(type, objectType) \
         (type*)AllocateObject(sizeof(type), objectType)
 
+ObjectBoundMethod* NewBoundMethod(Value receiver, ObjectClosure* method)
+{
+    ObjectBoundMethod* bound = ALLOCATE_OBJECT(ObjectBoundMethod, OBJECT_BOUND_METHOD);
+
+    bound->receiver = receiver;
+    bound->method = method;
+    return bound;
+}
+
 ObjectInstance* NewInstance(ObjectClass* _class)
 {
     ObjectInstance* instance = ALLOCATE_OBJECT(ObjectInstance, OBJECT_INSTANCE);
@@ -111,6 +120,9 @@ void PrintObject(Value value)
 {
     switch(OBJECT_TYPE(value))
     {
+        case OBJECT_BOUND_METHOD:
+            PrintFunction(AS_BOUND_METHOD(value)->method->function);
+            break;
         case OBJECT_CLASS:
             printf("%s", AS_CLASS(value)->name->chars);
             break;

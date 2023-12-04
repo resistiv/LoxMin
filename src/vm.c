@@ -15,6 +15,10 @@ static ObjectUpvalue* CaptureUpvalue(Value* local);
 static void CloseUpvalues(Value* last);
 static bool CallValue(Value callee, int argCount);
 static bool Call(ObjectClosure* closure, int argCount);
+static void DefineMethod(ObjectString* name);
+static bool BindMethod(ObjectClass* _class, ObjectString* name);
+static bool Invoke(ObjectString* name, int argCount);
+static bool InvokeFromClass(ObjectClass* _class, ObjectString* name, int argCount);
 static void DefineNative(const char* name, NativeFn function);
 static Value ClockNative(int argCount, Value* args);
 static bool IsFalsey(Value value);
@@ -47,6 +51,9 @@ void InitVM()
     InitTable(&vm.globals);
     InitTable(&vm.strings);
 
+    vm.initString = NULL;
+    vm.initString = CopyString("init", 4);
+
     DefineNative("clock", ClockNative);
 }
 
@@ -54,6 +61,7 @@ void FreeVM()
 {
     FreeTable(&vm.globals);
     FreeTable(&vm.strings);
+    vm.initString = NULL;
     FreeObjects();
 }
 
@@ -234,6 +242,7 @@ static InterpretResult Run()
                 ObjectInstance* instance = AS_INSTANCE(StackPeek(0));
                 ObjectString* name = READ_STRING();
 
+                // Search for a field first
                 Value value;
                 if (TableGet(&instance->fields, name, &value))
                 {
@@ -242,8 +251,12 @@ static InterpretResult Run()
                     break;
                 }
 
-                RuntimeError("Undefined property '%s'.", name->chars);
-                return INTERPRET_RUNTIME_ERROR;
+                // No field, assume method and search
+                if (!BindMethod(instance->_class, name))
+                {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
             }
             case OP_SET_PROPERTY:
             {
@@ -363,6 +376,17 @@ static InterpretResult Run()
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
+            case OP_INVOKE:
+            {
+                ObjectString* method = READ_STRING();
+                int argCount = READ_BYTE();
+                if (!Invoke(method, argCount))
+                {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
             case OP_CLOSURE:
             {
                 ObjectFunction* function = AS_FUNCTION(READ_CONSTANT());
@@ -408,6 +432,11 @@ static InterpretResult Run()
             case OP_CLASS:
             {
                 StackPush(OBJECT_VALUE(NewClass(READ_STRING())));
+                break;
+            }
+            case OP_METHOD:
+            {
+                DefineMethod(READ_STRING());
                 break;
             }
         }
@@ -487,10 +516,26 @@ static bool CallValue(Value callee, int argCount)
     {
         switch (OBJECT_TYPE(callee))
         {
+            case OBJECT_BOUND_METHOD:
+            {
+                ObjectBoundMethod* bound = AS_BOUND_METHOD(callee);
+                vm.sp[-argCount - 1] = bound->receiver;
+                return Call(bound->method, argCount);
+            }
             case OBJECT_CLASS:
             {
                 ObjectClass* _class = AS_CLASS(callee);
                 vm.sp[-argCount - 1] = OBJECT_VALUE(NewInstance(_class));
+                Value initializer;
+                if (TableGet(&_class->methods, vm.initString, &initializer))
+                {
+                    return Call(AS_CLOSURE(initializer), argCount);
+                }
+                else if (argCount != 0)
+                {
+                    RuntimeError("Expected 0 arguments but got %d.", argCount);
+                    return false;
+                }
                 return true;
             }
             case OBJECT_CLOSURE:
@@ -538,6 +583,86 @@ static bool Call(ObjectClosure* closure, int argCount)
     frame->ip = closure->function->chunk.code;
     frame->slots = vm.sp - argCount - 1;
     return true;
+}
+
+/**
+ * @brief Defines a class method.
+ * 
+ * @param name The name of the method.
+ */
+static void DefineMethod(ObjectString* name)
+{
+    Value method = StackPeek(0);
+    ObjectClass* _class = AS_CLASS(StackPeek(1));
+    TableSet(&_class->methods, name, method);
+    StackPop();
+}
+
+/**
+ * @brief Binds a method to a class.
+ * 
+ * @param _class A class to bind the method to.
+ * @param name The name of the method.
+ * @return true The binding was successful.
+ * @return false The binding failed.
+ */
+static bool BindMethod(ObjectClass* _class, ObjectString* name)
+{
+    // Verify the method we're looking for exists within the class
+    Value method;
+    if (!TableGet(&_class->methods, name, &method))
+    {
+        RuntimeError("Undefined property '%s'.", name->chars);
+        return false;
+    }
+
+    ObjectBoundMethod* bound = NewBoundMethod(StackPeek(0), AS_CLOSURE(method));
+
+    StackPop();
+    StackPush(OBJECT_VALUE(bound));
+    return true;
+}
+
+/**
+ * @brief Directly invokes a method.
+ * 
+ * @param name The name of the method.
+ * @param argCount The number of arguments fed to the method.
+ * @return true If the invocation succeeded.
+ * @return false If the invocation failed.
+ */
+static bool Invoke(ObjectString* name, int argCount)
+{
+    Value receiver = StackPeek(argCount);
+
+    if (!IS_INSTANCE(receiver))
+    {
+        RuntimeError("Only instances have methods.");
+        return false;
+    }
+
+    ObjectInstance* instance = AS_INSTANCE(receiver);
+    return InvokeFromClass(instance->_class, name, argCount);
+}
+
+/**
+ * @brief Directly invokes a method from a class.
+ * 
+ * @param _class The class containing the method.
+ * @param name The name of the method.
+ * @param argCount The number of arguments fed to the method.
+ * @return true If the invocation succeeded.
+ * @return false If the invocation failed.
+ */
+static bool InvokeFromClass(ObjectClass* _class, ObjectString* name, int argCount)
+{
+    Value method;
+    if (!TableGet(&_class->methods, name, &method))
+    {
+        RuntimeError("Undefined property '%s'.", name->chars);
+        return false;
+    }
+    return Call(AS_CLOSURE(method), argCount);
 }
 
 /**

@@ -80,11 +80,13 @@ typedef struct
 typedef enum
 {
     TYPE_FUNCTION,
+    TYPE_INITIALIZER,
+    TYPE_METHOD,
     TYPE_SCRIPT,
 } FunctionType;
 
 /**
- * @brief Stores the state of the compiler.
+ * @brief Stores the state of a compiler.
  */
 typedef struct Compiler
 {
@@ -97,6 +99,14 @@ typedef struct Compiler
     Upvalue upvalues[UINT8_COUNT];
     int scopeDepth;
 } Compiler;
+
+/**
+ * @brief Stores the state of a class compiler.
+ */
+typedef struct ClassCompiler
+{
+    struct ClassCompiler* enclosing;
+} ClassCompiler;
 
 static void CompileExpression();
 static void CompileDeclaration();
@@ -126,6 +136,7 @@ static void CompileString(bool canAssign);
 static void CompileVariable(bool canAssign);
 static void CompileNamedVariable(Token name, bool canAssign);
 static void CompileDot(bool canAssign);
+static void CompileThis(bool canAssign);
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
@@ -205,7 +216,7 @@ ParseRule rules[] =
     [TOKEN_PRINT]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RETURN]              = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_SUPER]               = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_THIS]                = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_THIS]                = {CompileThis,     NULL,          PRECEDENCE_NONE},
     [TOKEN_TRUE]                = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
     [TOKEN_VAR]                 = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_WHILE]               = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -215,6 +226,7 @@ ParseRule rules[] =
 
 Parser parser;
 Compiler* current = NULL;
+ClassCompiler* currentClass = NULL;
 
 ObjectFunction* Compile(const char* source)
 {
@@ -292,10 +304,14 @@ static void CompileClassDeclaration()
     uint8_t nameConstant = MakeIdentifierConstant(&parser.previous);
     DeclareVariable();
 
-    CompileNamedVariable(className, false);
     EmitTwoBytes(OP_CLASS, nameConstant);
     DefineVariable(nameConstant);
 
+    ClassCompiler classCompiler;
+    classCompiler.enclosing = currentClass;
+    currentClass = &classCompiler;
+
+    CompileNamedVariable(className, false);
     ConsumeToken(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
     while (!CheckToken(TOKEN_RIGHT_BRACE) && !CheckToken(TOKEN_EOF))
     {
@@ -303,6 +319,8 @@ static void CompileClassDeclaration()
     }
     ConsumeToken(TOKEN_RIGHT_BRACE, "Expect '}' after class body.");
     EmitByte(OP_POP);
+
+    currentClass = currentClass->enclosing;
 }
 
 /**
@@ -447,6 +465,11 @@ static void CompileReturnStatement()
     }
     else
     {
+        if (current->type == TYPE_INITIALIZER)
+        {
+            Error("Can't return a value from an initializer.");
+        }
+
         CompileExpression();
         ConsumeToken(TOKEN_SEMICOLON, "Expect ';' after return value.");
         EmitByte(OP_RETURN);
@@ -575,7 +598,12 @@ static void CompileMethod()
     ConsumeToken(TOKEN_IDENTIFIER, "Expect method name.");
     uint8_t constant = MakeIdentifierConstant(&parser.previous);
 
-    FunctionType type = TYPE_FUNCTION;
+    FunctionType type = TYPE_METHOD;
+    if (parser.previous.length == 4 && memcmp(parser.previous.start, "init", 4) == 0)
+    {
+        type = TYPE_INITIALIZER;
+    }
+
     CompileFunction(type);
     EmitTwoBytes(OP_METHOD, constant);
 }
@@ -818,10 +846,30 @@ static void CompileDot(bool canAssign)
         CompileExpression();
         EmitTwoBytes(OP_SET_PROPERTY, name);
     }
+    else if (MatchToken(TOKEN_LEFT_PARENTHESES))
+    {
+        uint8_t argCount = CompileArgumentList();
+        EmitTwoBytes(OP_INVOKE, name);
+        EmitByte(argCount);
+    }
     else
     {
         EmitTwoBytes(OP_GET_PROPERTY, name);
     }
+}
+
+/**
+ * @brief Compiles a this expression.
+ */
+static void CompileThis(bool canAssign)
+{
+    if (currentClass == NULL)
+    {
+        Error("Can't use 'this' outside of a class.");
+        return;
+    }
+
+    CompileVariable(false);
 }
 
 /**
@@ -1244,7 +1292,15 @@ static void EmitConstant(Value value)
  */
 static void EmitReturn()
 {
-    EmitByte(OP_NIL);
+    if (current->type == TYPE_INITIALIZER)
+    {
+        EmitTwoBytes(OP_GET_LOCAL, 0);
+    }
+    else
+    {
+        EmitByte(OP_NIL);
+    }
+
     EmitByte(OP_RETURN);
 }
 
@@ -1329,8 +1385,16 @@ static void InitCompiler(Compiler* compiler, FunctionType type)
     Local* local = &current->locals[current->localCount++];
     local->depth = 0;
     local->isCaptured = false;
-    local->name.start = "";
-    local->name.length = 0;
+    if (type != TYPE_FUNCTION)
+    {
+        local->name.start = "this";
+        local->name.length = 4;
+    }
+    else
+    {
+        local->name.start = "";
+        local->name.length = 0;
+    }
 }
 
 /**

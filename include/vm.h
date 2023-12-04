@@ -31,6 +31,7 @@ typedef struct
     Value* sp;
     Table globals;
     Table strings;
+    ObjectString* initString;
     ObjectUpvalue* openUpvalues;
 
     size_t bytesAllocated;

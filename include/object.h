@@ -11,6 +11,7 @@
  */
 typedef enum
 {
+    OBJECT_BOUND_METHOD,
     OBJECT_CLASS,
     OBJECT_INSTANCE,
     OBJECT_UPVALUE,
@@ -106,22 +107,43 @@ typedef struct
     Table fields;
 } ObjectInstance;
 
+/**
+ * @brief Represents a bound method.
+ */
+typedef struct
+{
+    Object obj;
+    Value receiver;
+    ObjectClosure* method;
+} ObjectBoundMethod;
+
 #define OBJECT_TYPE(value)  (AS_OBJECT(value)->type)
 
-#define IS_CLASS(value)     IsObjectType(value, OBJECT_CLASS)
-#define IS_CLOSURE(value)   IsObjectType(value, OBJECT_CLOSURE)
-#define IS_FUNCTION(value)  IsObjectType(value, OBJECT_FUNCTION)
-#define IS_INSTANCE(value)  IsObjectType(value, OBJECT_INSTANCE)
-#define IS_NATIVE(value)    IsObjectType(value, OBJECT_NATIVE)
-#define IS_STRING(value)    IsObjectType(value, OBJECT_STRING)
+#define IS_BOUND_METHOD(value)  IsObjectType(value, OBJECT_BOUND_METHOD)
+#define IS_CLASS(value)         IsObjectType(value, OBJECT_CLASS)
+#define IS_CLOSURE(value)       IsObjectType(value, OBJECT_CLOSURE)
+#define IS_FUNCTION(value)      IsObjectType(value, OBJECT_FUNCTION)
+#define IS_INSTANCE(value)      IsObjectType(value, OBJECT_INSTANCE)
+#define IS_NATIVE(value)        IsObjectType(value, OBJECT_NATIVE)
+#define IS_STRING(value)        IsObjectType(value, OBJECT_STRING)
 
-#define AS_CLASS(value)     ((ObjectClass*)AS_OBJECT(value))
-#define AS_CLOSURE(value)   ((ObjectClosure*)AS_OBJECT(value))
-#define AS_FUNCTION(value)  ((ObjectFunction*)AS_OBJECT(value))
-#define AS_INSTANCE(value)  ((ObjectInstance*)AS_OBJECT(value))
-#define AS_NATIVE(value)    (((ObjectNative*)AS_OBJECT(value))->function)
-#define AS_STRING(value)    ((ObjectString*)AS_OBJECT(value))
-#define AS_CSTRING(value)   (((ObjectString*)AS_OBJECT(value))->chars)
+#define AS_BOUND_METHOD(value)  ((ObjectBoundMethod*)AS_OBJECT(value))
+#define AS_CLASS(value)         ((ObjectClass*)AS_OBJECT(value))
+#define AS_CLOSURE(value)       ((ObjectClosure*)AS_OBJECT(value))
+#define AS_FUNCTION(value)      ((ObjectFunction*)AS_OBJECT(value))
+#define AS_INSTANCE(value)      ((ObjectInstance*)AS_OBJECT(value))
+#define AS_NATIVE(value)        (((ObjectNative*)AS_OBJECT(value))->function)
+#define AS_STRING(value)        ((ObjectString*)AS_OBJECT(value))
+#define AS_CSTRING(value)       (((ObjectString*)AS_OBJECT(value))->chars)
+
+/**
+ * @brief Instantiates a new bound method.
+ * 
+ * @param receiver The receiver of the bound method.
+ * @param method The method itself.
+ * @return ObjectBoundMethod* A pointer to the new ObjectBoundMethod object.
+ */
+ObjectBoundMethod* NewBoundMethod(Value receiver, ObjectClosure* method);
 
 /**
  * @brief Instantiates a new class instance.
