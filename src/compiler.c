@@ -106,6 +106,7 @@ typedef struct Compiler
 typedef struct ClassCompiler
 {
     struct ClassCompiler* enclosing;
+    bool hasSuperclass;
 } ClassCompiler;
 
 static void CompileExpression();
@@ -137,6 +138,7 @@ static void CompileVariable(bool canAssign);
 static void CompileNamedVariable(Token name, bool canAssign);
 static void CompileDot(bool canAssign);
 static void CompileThis(bool canAssign);
+static void CompileSuper(bool canAssign);
 
 static void ParsePrecedence(Precedence precedence);
 static ParseRule* GetParseRule(TokenType type);
@@ -149,6 +151,7 @@ static int AddUpvalue(Compiler* compiler, uint8_t index, bool isLocal);
 static int ResolveUpvalue(Compiler* compiler, Token* name);
 static void MarkInitialized();
 
+static Token SyntheticToken(const char* text);
 static void NextToken();
 static void ConsumeToken(TokenType type, const char* message);
 static bool MatchToken(TokenType type);
@@ -215,7 +218,7 @@ ParseRule rules[] =
     [TOKEN_OR]                  = {NULL,            CompileOr,     PRECEDENCE_OR},
     [TOKEN_PRINT]               = {NULL,            NULL,          PRECEDENCE_NONE},
     [TOKEN_RETURN]              = {NULL,            NULL,          PRECEDENCE_NONE},
-    [TOKEN_SUPER]               = {NULL,            NULL,          PRECEDENCE_NONE},
+    [TOKEN_SUPER]               = {CompileSuper,    NULL,          PRECEDENCE_NONE},
     [TOKEN_THIS]                = {CompileThis,     NULL,          PRECEDENCE_NONE},
     [TOKEN_TRUE]                = {CompileLiteral,  NULL,          PRECEDENCE_NONE},
     [TOKEN_VAR]                 = {NULL,            NULL,          PRECEDENCE_NONE},
@@ -307,9 +310,33 @@ static void CompileClassDeclaration()
     EmitTwoBytes(OP_CLASS, nameConstant);
     DefineVariable(nameConstant);
 
+    // Track the current class for "this"
     ClassCompiler classCompiler;
     classCompiler.enclosing = currentClass;
+    classCompiler.hasSuperclass = false;
     currentClass = &classCompiler;
+
+    // Handle inheritance
+    if (MatchToken(TOKEN_LESS))
+    {
+        ConsumeToken(TOKEN_IDENTIFIER, "Expect superclass name.");
+        CompileVariable(false);
+
+        // Make sure we aren't trying to inherit from ourself
+        if (AreIdentifiersEqual(&className, &parser.previous))
+        {
+            Error("A class can't inherit from itself.");
+        }
+
+        // Define "super" keyword
+        BeginScope();
+        AddLocalVariable(SyntheticToken("super"));
+        DefineVariable(0);
+
+        CompileNamedVariable(className, false);
+        EmitByte(OP_INHERIT);
+        classCompiler.hasSuperclass = true;
+    }
 
     CompileNamedVariable(className, false);
     ConsumeToken(TOKEN_LEFT_BRACE, "Expect '{' before class body.");
@@ -319,6 +346,12 @@ static void CompileClassDeclaration()
     }
     ConsumeToken(TOKEN_RIGHT_BRACE, "Expect '}' after class body.");
     EmitByte(OP_POP);
+
+    // Pop superclass scope
+    if (classCompiler.hasSuperclass)
+    {
+        EndScope();
+    }
 
     currentClass = currentClass->enclosing;
 }
@@ -873,6 +906,39 @@ static void CompileThis(bool canAssign)
 }
 
 /**
+ * @brief Compiles a super expression.
+ */
+static void CompileSuper(bool canAssign)
+{
+    if (currentClass == NULL)
+    {
+        Error("Can't use 'super' outside of a class.");
+    }
+    else if (!currentClass->hasSuperclass)
+    {
+        Error("Can't use 'super' in a class with no superclass.");
+    }
+
+    ConsumeToken(TOKEN_DOT, "Expect '.' after 'super'.");
+    ConsumeToken(TOKEN_IDENTIFIER, "Expect superclass method name.");
+    uint8_t name = MakeIdentifierConstant(&parser.previous);
+
+    CompileNamedVariable(SyntheticToken("this"), false);
+    if (MatchToken(TOKEN_LEFT_PARENTHESES))
+    {
+        uint8_t argCount = CompileArgumentList();
+        CompileNamedVariable(SyntheticToken("super"), false);
+        EmitTwoBytes(OP_SUPER_INVOKE, name);
+        EmitByte(argCount);
+    }
+    else
+    {
+        CompileNamedVariable(SyntheticToken("super"), false);
+        EmitTwoBytes(OP_GET_SUPER, name);
+    }
+}
+
+/**
  * @brief Parses a Precedence enum to determine what type of expression to parse next.
  * 
  * @param precedence A Precedence enum.
@@ -1099,6 +1165,20 @@ static void MarkInitialized()
         return;
     }
     current->locals[current->localCount - 1].depth = current->scopeDepth;
+}
+
+/**
+ * @brief Generates a Token not found in the original input stream.
+ * 
+ * @param text The text of the Token.
+ * @return Token A resulting Token.
+ */
+static Token SyntheticToken(const char* text)
+{
+    Token token;
+    token.start = text;
+    token.length = (int)strlen(text);
+    return token;
 }
 
 /**

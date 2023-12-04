@@ -15,6 +15,7 @@ static char* ReadFile(const char* path);
  */
 int main(int argc, const char* argv[])
 {
+    printf("LoxMin v1.0.0 - Kai NeSmith 2023\n");
     InitVM();
 
     // No path given

@@ -273,6 +273,17 @@ static InterpretResult Run()
                 StackPush(value);
                 break;
             }
+            case OP_GET_SUPER:
+            {
+                ObjectString* name = READ_STRING();
+                ObjectClass* superclass = AS_CLASS(StackPop());
+
+                if (!BindMethod(superclass, name))
+                {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                break;
+            }
             case OP_EQUAL:
             {
                 Value b = StackPop();
@@ -387,6 +398,18 @@ static InterpretResult Run()
                 frame = &vm.frames[vm.frameCount - 1];
                 break;
             }
+            case OP_SUPER_INVOKE:
+            {
+                ObjectString* method = READ_STRING();
+                int argCount= READ_BYTE();
+                ObjectClass* superclass = AS_CLASS(StackPop());
+                if (!InvokeFromClass(superclass, method, argCount))
+                {
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+                frame = &vm.frames[vm.frameCount - 1];
+                break;
+            }
             case OP_CLOSURE:
             {
                 ObjectFunction* function = AS_FUNCTION(READ_CONSTANT());
@@ -432,6 +455,20 @@ static InterpretResult Run()
             case OP_CLASS:
             {
                 StackPush(OBJECT_VALUE(NewClass(READ_STRING())));
+                break;
+            }
+            case OP_INHERIT:
+            {
+                Value superclass = StackPeek(1);
+                if (!IS_CLASS(superclass))
+                {
+                    RuntimeError("Superclass must be a class.");
+                    return INTERPRET_RUNTIME_ERROR;
+                }
+
+                ObjectClass* subclass = AS_CLASS(StackPeek(0));
+                TableCopy(&AS_CLASS(superclass)->methods, &subclass->methods);
+                StackPop();
                 break;
             }
             case OP_METHOD:
