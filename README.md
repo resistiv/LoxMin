@@ -45,6 +45,7 @@ dotnet test
 The number of successful and failed tests will be displayed.
 **Of important note, LoxMin must be built in-place in its subdirectory, as the test harness will specifically search in that location for the executable.**
 
-As of commit ``editme``, everything builds, runs, and all tests pass on Windows 10 and Ubuntu 22.04.
+As of commit ``2e91c39``, everything builds, runs, and all tests pass on Windows 10 and Ubuntu 22.04.
 ![](./LoxTester/Results/win10-tests-2023-12-04.png "Windows 10 Test Results")
 ![](./LoxTester/Results/ubuntu2204-tests-2023-12-04.png "Ubuntu 22.04 Test Results")
+As an aside, while a C implementation of Lox is very efficient, this testing suite is not. Instead of interfacing with the actual C code and keeping one running process throughout, each test spawns a LoxMin process which runs code and exits. Needless to say, this creates a lot of overhead, and so the runtime of these tests is not indicative of the final optimization or speed of LoxMin.
