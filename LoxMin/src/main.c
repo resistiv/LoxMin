@@ -15,23 +15,29 @@ static char* ReadFile(const char* path);
  */
 int main(int argc, const char* argv[])
 {
-    printf("LoxMin v1.0.0 - Kai NeSmith 2023\n");
     InitVM();
 
     // No path given
     if (argc == 1)
     {
+        printf("LoxMin v1.0.0 - Kai NeSmith 2023\n");
         Repl();
     }
     // Path provided
     else if (argc == 2)
+    {
+        printf("LoxMin v1.0.0 - Kai NeSmith 2023\n");
+        RunFile(argv[1]);
+    }
+    // Path provided, quiet mode for debugging
+    else if (argc == 3 && strcmp(argv[2], "-q") == 0)
     {
         RunFile(argv[1]);
     }
     // Does our user know where they are?
     else
     {
-        fprintf(stderr, "Usage: LoxMin [path]\n");
+        fprintf(stderr, "Usage: LoxMin [path] [-q]\n");
         exit(64);
     }
 

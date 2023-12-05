@@ -354,6 +354,7 @@ static InterpretResult Run()
             {
                 PrintValue(StackPop());
                 printf("\n");
+                fflush(stdout);
                 break;
             }
             case OP_JUMP:
