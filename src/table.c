@@ -103,7 +103,7 @@ void TableCopy(Table* from, Table* to)
  */
 static Entry* FindEntry(Entry* entries, int capacity, ObjectString* key)
 {
-    uint32_t index = key->hash % capacity;
+    uint32_t index = key->hash & (capacity - 1);
     Entry* tombstone = NULL;
     
     while (1)
@@ -131,7 +131,7 @@ static Entry* FindEntry(Entry* entries, int capacity, ObjectString* key)
             return entry;
         }
 
-        index = (index + 1) % capacity;
+        index = (index + 1) & (capacity - 1);
     }
 }
 
@@ -184,7 +184,7 @@ ObjectString* TableFindString(Table* table, const char* chars, int length, uint3
         return NULL;
     }
 
-    uint32_t index = hash % table->capacity;
+    uint32_t index = hash & (table->capacity - 1);
     while (1)
     {
         Entry* entry = &table->entries[index];
@@ -202,7 +202,7 @@ ObjectString* TableFindString(Table* table, const char* chars, int length, uint3
             return entry->key;
         }
 
-        index = (index + 1) % table->capacity;
+        index = (index + 1) & (table->capacity - 1);
     }
 }
 
