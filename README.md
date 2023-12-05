@@ -29,3 +29,22 @@ make
 ```
 The resulting executable will be built to the ``LoxMin`` folder, from which it can be run.
 
+## Testing
+This repository makes use of [Robert Nystrom's Lox unit tests](https://github.com/munificent/craftinginterpreters/tree/master/test), excluding benchmarks.
+For ease of generation, all unit test classes are generated using the ``LoxTestGenerator`` project.
+
+For even easier use, two scripts are provided for Unix (``LoxTester/BuildTests.sh``) and Windows (``LoxTester/BuildTests.bat``) to generate the test cases classes for the ``LoxTester`` project. Both scripts will:
+- Build the ``LoxTester`` solution to ensure ``LoxTestGenerator`` is built.
+- Run ``LoxTestGenerator``, loading tests from ``LoxTester/LoxTester/Tests`` and outputting to ``LoxTester/LoxTester``.
+- Build the solution again to incorporate the newly generated tests.
+
+Run the appropriate script in the ``LoxTester`` directory to build the tests and run the following to run the test cases:
+```
+dotnet test
+```
+The number of successful and failed tests will be displayed.
+**Of important note, LoxMin must be built in-place in its subdirectory, as the test harness will specifically search in that location for the executable.**
+
+As of commit ``editme``, everything builds, runs, and all tests pass on Windows 10 and Ubuntu 22.04.
+![](./LoxTester/Results/win10-tests-2023-12-04.png "Windows 10 Test Results")
+![](./LoxTester/Results/ubuntu2204-tests-2023-12-04.png "Ubuntu 22.04 Test Results")
